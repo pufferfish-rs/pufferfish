@@ -1,0 +1,12 @@
+[package]
+name = "pufferfish"
+version = "0.1.0"
+authors = ["lunabunn <iamrabbitmoon@gmail.com>"]
+edition = "2021"
+description = "An opinionated 2D game framework"
+repository = "https://github.com/pufferfish-rs/pufferfish/"
+license = "Zlib OR MIT OR Apache-2.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
