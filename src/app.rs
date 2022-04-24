@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use fugu::Context;
 use sdl2::event::Event;
+use sdl2::video::GLProfile;
 
 pub struct App {
     title: Cow<'static, str>,
@@ -39,6 +40,7 @@ impl App {
 
         let gl_attr = video_subsystem.gl_attr();
         gl_attr.set_context_version(3, 3);
+        gl_attr.set_context_profile(GLProfile::Core);
 
         let _gl = window.gl_create_context().unwrap();
         let _ctx = Context::new(|s| video_subsystem.gl_get_proc_address(s).cast());
