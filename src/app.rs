@@ -7,6 +7,8 @@ use fugu::Context;
 use sdl2::event::Event;
 use sdl2::video::GLProfile;
 
+use crate::input::{Input, KeyCode};
+
 #[derive(Clone, Copy)]
 enum BorrowState {
     Free,
@@ -19,6 +21,7 @@ struct ManualCell<T> {
     borrow: Cell<BorrowState>,
 }
 
+#[derive(Debug)]
 enum ManualCellError {
     AlreadyBorrowed,
     AlreadyBorrowedMut,
@@ -194,13 +197,49 @@ impl App {
 
         let mut event_pump = sdl_context.event_pump().unwrap();
 
+        self.state.insert(
+            TypeId::of::<Input>(),
+            ManualCell::new(Box::new(Input::new())),
+        );
+
         'running: loop {
+            let input_cell = self.state.get(&TypeId::of::<Input>()).unwrap();
+            let input = input_cell
+                .try_borrow_mut()
+                .unwrap()
+                .downcast_mut::<Input>()
+                .unwrap();
+            input.update();
+
             for event in event_pump.poll_iter() {
                 match event {
                     Event::Quit { .. } => break 'running,
+                    Event::KeyDown {
+                        keycode, repeat, ..
+                    } => {
+                        if let (Some(key), false) = (KeyCode::from_sdl(keycode), repeat) {
+                            if !input.keys_down.contains(&key) {
+                                input.keys_down.push(key);
+                            }
+                            if !input.keys_pressed.contains(&key) {
+                                input.keys_pressed.push(key);
+                            }
+                        }
+                    }
+                    Event::KeyUp {
+                        keycode, repeat, ..
+                    } => {
+                        if let (Some(key), false) = (KeyCode::from_sdl(keycode), repeat) {
+                            input.keys_down.retain(|&k| k != key);
+                            input.keys_released.push(key);
+                        }
+                    }
                     _ => {}
                 }
             }
+
+            drop(input);
+            input_cell.free();
 
             (self.callbacks.as_ref())(&mut self.state);
 
