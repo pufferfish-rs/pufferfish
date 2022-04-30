@@ -1,27 +1,108 @@
-use std::any::{TypeId, Any};
+use std::any::{Any, TypeId};
 use std::borrow::Cow;
+use std::cell::{Cell, UnsafeCell};
 use std::collections::HashMap;
 
 use fugu::Context;
 use sdl2::event::Event;
 use sdl2::video::GLProfile;
 
-pub trait Callback<Args> {
-    fn call(&self, args: &mut HashMap<TypeId, Box<dyn Any>>);
+#[derive(Clone, Copy)]
+enum BorrowState {
+    Free,
+    Shared,
+    Exclusive,
 }
 
-impl<A: 'static, F> Callback<(A,)> for F where F: Fn(&mut A) {
-    fn call(&self, args: &mut HashMap<TypeId, Box<dyn Any>>) {
-        let a = args.get_mut(&TypeId::of::<A>()).unwrap().downcast_mut().unwrap();
-        self(a)
+pub struct ManualCell<T> {
+    value: UnsafeCell<T>,
+    borrow: Cell<BorrowState>,
+}
+
+impl<T> ManualCell<T> {
+    fn new(value: T) -> ManualCell<T> {
+        ManualCell {
+            value: UnsafeCell::new(value),
+            borrow: Cell::new(BorrowState::Free),
+        }
+    }
+
+    fn free(&self) {
+        self.borrow.set(BorrowState::Free);
+    }
+
+    fn borrow(&self) -> &T {
+        match self.borrow.get() {
+            BorrowState::Free | BorrowState::Shared => {
+                self.borrow.set(BorrowState::Shared);
+                unsafe { &*self.value.get() }
+            }
+            BorrowState::Exclusive => panic!("already mutably borrowed"),
+        }
+    }
+
+    fn borrow_mut(&self) -> &mut T {
+        match self.borrow.get() {
+            BorrowState::Free => {
+                self.borrow.set(BorrowState::Exclusive);
+                unsafe { &mut *self.value.get() }
+            }
+            BorrowState::Shared => panic!("already borrowed"),
+            BorrowState::Exclusive => panic!("already mutably borrowed"),
+        }
     }
 }
+
+trait Argable {
+    unsafe fn get(args: *mut HashMap<TypeId, ManualCell<Box<dyn Any>>>) -> Self;
+}
+
+impl<T: 'static> Argable for &T {
+    unsafe fn get(args: *mut HashMap<TypeId, ManualCell<Box<dyn Any>>>) -> Self {
+        args.as_mut()
+            .unwrap()
+            .get(&TypeId::of::<T>())
+            .unwrap()
+            .borrow()
+            .downcast_ref()
+            .unwrap()
+    }
+}
+
+impl<T: 'static> Argable for &mut T {
+    unsafe fn get(args: *mut HashMap<TypeId, ManualCell<Box<dyn Any>>>) -> Self {
+        args.as_mut()
+            .unwrap()
+            .get(&TypeId::of::<T>())
+            .unwrap()
+            .borrow_mut()
+            .downcast_mut()
+            .unwrap()
+    }
+}
+
+pub trait Callback<Args> {
+    fn call(&self, args: &mut HashMap<TypeId, ManualCell<Box<dyn Any>>>);
+}
+
+macro_rules! impl_callback {
+    ($($first:ident$(, $($other:ident),+)?$(,)?)?) => {
+        impl<$($first$(, $($other),+)?,)? Func> Callback<($($first$(, $($other),+)?)?,)> for Func where Func: Fn($($first$(, $($other),+)?,)?), $($first: Argable$(, $($other: Argable),+)?,)? {
+            fn call(&self, args: &mut HashMap<TypeId, ManualCell<Box<dyn Any>>>) {
+                unsafe { self($($first::get(args)$(, $($other::get(args)),+)?,)?) }
+            }
+        }
+        $($(impl_callback!($($other),+);)?)?
+    };
+}
+
+impl_callback!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z);
 
 pub struct App {
     title: Cow<'static, str>,
     size: (u32, u32),
-    state: HashMap<TypeId, Box<dyn Any>>,
-    callbacks: Option<Box<dyn Fn(&mut HashMap<TypeId, Box<dyn Any>>)>>,
+    state: HashMap<TypeId, ManualCell<Box<dyn Any>>>,
+    callbacks: Option<Box<dyn Fn(&mut HashMap<TypeId, ManualCell<Box<dyn Any>>>)>>,
 }
 
 impl App {
@@ -45,11 +126,12 @@ impl App {
     }
 
     pub fn add_state<T: 'static>(mut self, state: T) -> App {
-        self.state.insert(TypeId::of::<T>(), Box::new(state));
+        self.state
+            .insert(TypeId::of::<T>(), ManualCell::new(Box::new(state)));
         self
     }
 
-    pub fn add_callback<Args, T: Callback<Args> + 'static>(mut self, callback: T) -> App {
+    pub fn add_callback<'a, Args, T: Callback<Args> + 'static>(mut self, callback: T) -> App {
         let cbs = self.callbacks.take().unwrap();
         self.callbacks = Some(Box::new(move |args: &mut _| {
             cbs(args);
@@ -87,6 +169,10 @@ impl App {
             }
 
             (self.callbacks.as_ref().unwrap())(&mut self.state);
+
+            for cell in self.state.values_mut() {
+                cell.free();
+            }
 
             window.gl_swap_window();
         }
