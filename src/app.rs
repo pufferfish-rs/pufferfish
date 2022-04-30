@@ -1,4 +1,4 @@
-use std::any::{Any, TypeId};
+use std::any::{type_name, Any, TypeId};
 use std::borrow::Cow;
 use std::cell::{Cell, UnsafeCell};
 use std::collections::HashMap;
@@ -19,6 +19,11 @@ pub struct ManualCell<T> {
     borrow: Cell<BorrowState>,
 }
 
+enum ManualCellError {
+    AlreadyBorrowed,
+    AlreadyBorrowedMut,
+}
+
 impl<T> ManualCell<T> {
     fn new(value: T) -> ManualCell<T> {
         ManualCell {
@@ -31,24 +36,24 @@ impl<T> ManualCell<T> {
         self.borrow.set(BorrowState::Free);
     }
 
-    fn borrow(&self) -> &T {
+    fn try_borrow(&self) -> Result<&T, ManualCellError> {
         match self.borrow.get() {
             BorrowState::Free | BorrowState::Shared => {
                 self.borrow.set(BorrowState::Shared);
-                unsafe { &*self.value.get() }
+                unsafe { Ok(&*self.value.get()) }
             }
-            BorrowState::Exclusive => panic!("already mutably borrowed"),
+            BorrowState::Exclusive => Err(ManualCellError::AlreadyBorrowedMut),
         }
     }
 
-    fn borrow_mut(&self) -> &mut T {
+    fn try_borrow_mut(&self) -> Result<&mut T, ManualCellError> {
         match self.borrow.get() {
             BorrowState::Free => {
                 self.borrow.set(BorrowState::Exclusive);
-                unsafe { &mut *self.value.get() }
+                unsafe { Ok(&mut *self.value.get()) }
             }
-            BorrowState::Shared => panic!("already borrowed"),
-            BorrowState::Exclusive => panic!("already mutably borrowed"),
+            BorrowState::Shared => Err(ManualCellError::AlreadyBorrowed),
+            BorrowState::Exclusive => Err(ManualCellError::AlreadyBorrowedMut),
         }
     }
 }
@@ -72,7 +77,14 @@ impl<T: 'static> Argable for &T {
             .unwrap()
             .get(&TypeId::of::<T>())
             .unwrap()
-            .borrow()
+            .try_borrow()
+            .unwrap_or_else(|e| match e {
+                ManualCellError::AlreadyBorrowed => unreachable!(),
+                ManualCellError::AlreadyBorrowedMut => panic!(
+                    "cannot borrow {} immutably because it was already borrowed mutably",
+                    type_name::<T>().rsplit("::").next().unwrap()
+                ),
+            })
             .downcast_ref()
             .unwrap()
     }
@@ -84,7 +96,17 @@ impl<T: 'static> Argable for &mut T {
             .unwrap()
             .get(&TypeId::of::<T>())
             .unwrap()
-            .borrow_mut()
+            .try_borrow_mut()
+            .unwrap_or_else(|e| match e {
+                ManualCellError::AlreadyBorrowed => panic!(
+                    "cannot borrow {} mutably because it was already borrowed immutably",
+                    type_name::<T>().rsplit("::").next().unwrap()
+                ),
+                ManualCellError::AlreadyBorrowedMut => panic!(
+                    "cannot borrow {} mutably more than once",
+                    type_name::<T>().rsplit("::").next().unwrap()
+                ),
+            })
             .downcast_mut()
             .unwrap()
     }
