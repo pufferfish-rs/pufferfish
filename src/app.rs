@@ -14,7 +14,7 @@ enum BorrowState {
     Exclusive,
 }
 
-pub struct ManualCell<T> {
+struct ManualCell<T> {
     value: UnsafeCell<T>,
     borrow: Cell<BorrowState>,
 }
@@ -112,15 +112,17 @@ impl<T: 'static> Argable for &mut T {
     }
 }
 
+pub struct CallbackArgs<'a>(&'a mut HashMap<TypeId, ManualCell<Box<dyn Any>>>);
+
 pub trait Callback<Args> {
-    fn call(&self, args: &mut HashMap<TypeId, ManualCell<Box<dyn Any>>>);
+    fn call(&self, args: CallbackArgs);
 }
 
 macro_rules! impl_callback {
     ($($first:ident$(, $($other:ident),+)?$(,)?)?) => {
         impl<$($first$(, $($other),+)?,)? Func> Callback<($($first$(, $($other),+)?)?,)> for Func where Func: Fn($($first$(, $($other),+)?,)?), $($first: Argable$(, $($other: Argable),+)?,)? {
-            fn call(&self, args: &mut HashMap<TypeId, ManualCell<Box<dyn Any>>>) {
-                unsafe { self($($first::get(args)$(, $($other::get(args)),+)?,)?) }
+            fn call(&self, args: CallbackArgs) {
+                unsafe { self($($first::get(args.0)$(, $($other::get(args.0)),+)?,)?) }
             }
         }
         $($(impl_callback!($($other),+);)?)?
@@ -166,7 +168,7 @@ impl App {
         replace_with(&mut self.callbacks, |cbs| {
             Box::new(move |args: &mut _| {
                 cbs(args);
-                callback.call(args);
+                callback.call(CallbackArgs(args));
             })
         });
         self
