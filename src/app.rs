@@ -53,6 +53,15 @@ impl<T> ManualCell<T> {
     }
 }
 
+fn replace_with<T, F: FnOnce(T) -> T>(dest: &mut T, f: F) {
+    unsafe {
+        let old = std::ptr::read(dest);
+        let new = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(old)))
+            .unwrap_or_else(|_| std::process::abort());
+        std::ptr::write(dest, new);
+    }
+}
+
 trait Argable {
     unsafe fn get(args: *mut HashMap<TypeId, ManualCell<Box<dyn Any>>>) -> Self;
 }
@@ -102,7 +111,7 @@ pub struct App {
     title: Cow<'static, str>,
     size: (u32, u32),
     state: HashMap<TypeId, ManualCell<Box<dyn Any>>>,
-    callbacks: Option<Box<dyn Fn(&mut HashMap<TypeId, ManualCell<Box<dyn Any>>>)>>,
+    callbacks: Box<dyn Fn(&mut HashMap<TypeId, ManualCell<Box<dyn Any>>>)>,
 }
 
 impl App {
@@ -111,7 +120,7 @@ impl App {
             title: "Pufferfish".into(),
             size: (800, 600),
             state: HashMap::new(),
-            callbacks: Some(Box::new(|_| {})),
+            callbacks: Box::new(|_| {}),
         }
     }
 
@@ -132,11 +141,12 @@ impl App {
     }
 
     pub fn add_callback<'a, Args, T: Callback<Args> + 'static>(mut self, callback: T) -> App {
-        let cbs = self.callbacks.take().unwrap();
-        self.callbacks = Some(Box::new(move |args: &mut _| {
-            cbs(args);
-            callback.call(args);
-        }));
+        replace_with(&mut self.callbacks, |cbs| {
+            Box::new(move |args: &mut _| {
+                cbs(args);
+                callback.call(args);
+            })
+        });
         self
     }
 
@@ -168,7 +178,7 @@ impl App {
                 }
             }
 
-            (self.callbacks.as_ref().unwrap())(&mut self.state);
+            (self.callbacks.as_ref())(&mut self.state);
 
             for cell in self.state.values_mut() {
                 cell.free();
