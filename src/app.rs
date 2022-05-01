@@ -96,11 +96,20 @@ impl<T: DerefMut<Target = dyn Any>> ManualCell<T> {
     }
 }
 
+struct AbortOnDrop;
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        std::process::abort();
+    }
+}
+
 fn replace_with<T, F: FnOnce(T) -> T>(dest: &mut T, f: F) {
     unsafe {
         let old = std::ptr::read(dest);
-        let new = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(old)))
-            .unwrap_or_else(|_| std::process::abort());
+        let abort = AbortOnDrop;
+        let new = f(old);
+        std::mem::forget(abort);
         std::ptr::write(dest, new);
     }
 }
