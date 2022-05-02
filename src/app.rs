@@ -27,6 +27,11 @@ fn replace_with<T, F: FnOnce(T) -> T>(dest: &mut T, f: F) {
     }
 }
 
+fn type_name<T>() -> &'static str {
+    let s = std::any::type_name::<T>();
+    &s[s.rmatch_indices("::").find_map(|(j, _)| (s.find('<').unwrap_or(s.len()) > j).then(|| j + 2)).unwrap_or(0)..]
+}
+
 struct ArgDesc {
     tid: TypeId,
     tname: &'static str,
@@ -54,7 +59,7 @@ impl<T: 'static> Argable for &T {
     fn desc() -> ArgDesc {
         ArgDesc {
             tid: TypeId::of::<T>(),
-            tname: std::any::type_name::<T>().rsplit("::").next().unwrap(),
+            tname: type_name::<T>(),
             unique: false,
         }
     }
@@ -76,7 +81,7 @@ impl<T: 'static> Argable for &mut T {
     fn desc() -> ArgDesc {
         ArgDesc {
             tid: TypeId::of::<T>(),
-            tname: std::any::type_name::<T>().rsplit("::").next().unwrap(),
+            tname: type_name::<T>(),
             unique: true,
         }
     }
@@ -102,9 +107,9 @@ macro_rules! impl_callback {
                     for (j, b) in arg_types.iter().enumerate() {
                         if i != j && a.tid == b.tid {
                             if a.unique && b.unique {
-                                panic!("callback requesting multiple unique references to {}", a.tname);
+                                panic!("illegal callback signature ({}): multiple unique references to {}", arg_types.iter().flat_map(|e| [", ", if e.unique { "&mut " } else { "&" }, e.tname]).skip(1).collect::<String>(), a.tname);
                             } else if a.unique || b.unique {
-                                panic!("callback requesting both unique and shared references to {}", a.tname);
+                                panic!("illegal callback signature ({}): both unique and shared references to {}", arg_types.iter().flat_map(|e| [", ", if e.unique { "&mut " } else { "&" }, e.tname]).skip(1).collect::<String>(), a.tname);
                             }
                         }
                     }
