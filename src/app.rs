@@ -1,100 +1,13 @@
-use std::any::{type_name, Any, TypeId};
+use std::any::{Any, TypeId};
 use std::borrow::Cow;
-use std::cell::{Cell, UnsafeCell};
+use std::cell::UnsafeCell;
 use std::collections::HashMap;
-use std::ops::{Deref, DerefMut};
 
 use fugu::Context;
 use sdl2::event::Event;
 use sdl2::video::GLProfile;
 
 use crate::input::{self, Input};
-
-#[derive(Clone, Copy)]
-enum BorrowState {
-    Free,
-    Shared,
-    Exclusive,
-}
-
-struct ManualCell<T> {
-    value: UnsafeCell<T>,
-    borrow: Cell<BorrowState>,
-}
-
-#[derive(Debug)]
-enum ManualCellError {
-    AlreadyBorrowed,
-    AlreadyBorrowedMut,
-}
-
-impl<T> ManualCell<T> {
-    fn new(value: T) -> ManualCell<T> {
-        ManualCell {
-            value: UnsafeCell::new(value),
-            borrow: Cell::new(BorrowState::Free),
-        }
-    }
-
-    fn free(&self) {
-        self.borrow.set(BorrowState::Free);
-    }
-
-    fn try_borrow(&self) -> Result<&T, ManualCellError> {
-        match self.borrow.get() {
-            BorrowState::Free | BorrowState::Shared => {
-                self.borrow.set(BorrowState::Shared);
-                unsafe { Ok(&*self.value.get()) }
-            }
-            BorrowState::Exclusive => Err(ManualCellError::AlreadyBorrowedMut),
-        }
-    }
-
-    fn try_borrow_mut(&self) -> Result<&mut T, ManualCellError> {
-        match self.borrow.get() {
-            BorrowState::Free => {
-                self.borrow.set(BorrowState::Exclusive);
-                unsafe { Ok(&mut *self.value.get()) }
-            }
-            BorrowState::Shared => Err(ManualCellError::AlreadyBorrowed),
-            BorrowState::Exclusive => Err(ManualCellError::AlreadyBorrowedMut),
-        }
-    }
-}
-
-struct ManualCellGuard<'a, T>(&'a mut T, &'a Cell<BorrowState>);
-
-impl<'a, T> Drop for ManualCellGuard<'a, T> {
-    fn drop(&mut self) {
-        self.1.set(BorrowState::Free);
-    }
-}
-
-impl<'a, T> Deref for ManualCellGuard<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        &*self.0
-    }
-}
-
-impl<'a, T> DerefMut for ManualCellGuard<'a, T> {
-    fn deref_mut(&mut self) -> &mut T {
-        &mut *self.0
-    }
-}
-
-impl<T: DerefMut<Target = dyn Any>> ManualCell<T> {
-    fn take_downcast_guarded<'a, V: 'static>(&'a self) -> ManualCellGuard<'a, V> {
-        ManualCellGuard(
-            self.try_borrow_mut()
-                .expect("cannot take borrowed value")
-                .downcast_mut()
-                .unwrap(),
-            &self.borrow,
-        )
-    }
-}
 
 struct AbortOnDrop;
 
@@ -114,55 +27,66 @@ fn replace_with<T, F: FnOnce(T) -> T>(dest: &mut T, f: F) {
     }
 }
 
+struct ArgDesc {
+    tid: TypeId,
+    tname: &'static str,
+    unique: bool,
+}
+
 trait Argable {
-    unsafe fn get(args: *mut HashMap<TypeId, ManualCell<Box<dyn Any>>>) -> Self;
+    unsafe fn get(args: *mut HashMap<TypeId, UnsafeCell<Box<dyn Any>>>) -> Self;
+    fn desc() -> ArgDesc;
 }
 
 impl<T: 'static> Argable for &T {
-    unsafe fn get(args: *mut HashMap<TypeId, ManualCell<Box<dyn Any>>>) -> Self {
+    unsafe fn get(args: *mut HashMap<TypeId, UnsafeCell<Box<dyn Any>>>) -> Self {
         args.as_mut()
             .unwrap()
             .get(&TypeId::of::<T>())
             .unwrap()
-            .try_borrow()
-            .unwrap_or_else(|e| match e {
-                ManualCellError::AlreadyBorrowed => unreachable!(),
-                ManualCellError::AlreadyBorrowedMut => panic!(
-                    "cannot borrow {} immutably because it was already borrowed mutably",
-                    type_name::<T>().rsplit("::").next().unwrap()
-                ),
-            })
+            .get()
+            .as_ref()
+            .unwrap_unchecked()
             .downcast_ref()
-            .unwrap()
+            .unwrap_unchecked()
+    }
+
+    fn desc() -> ArgDesc {
+        ArgDesc {
+            tid: TypeId::of::<T>(),
+            tname: std::any::type_name::<T>().rsplit("::").next().unwrap(),
+            unique: false,
+        }
     }
 }
 
 impl<T: 'static> Argable for &mut T {
-    unsafe fn get(args: *mut HashMap<TypeId, ManualCell<Box<dyn Any>>>) -> Self {
+    unsafe fn get(args: *mut HashMap<TypeId, UnsafeCell<Box<dyn Any>>>) -> Self {
         args.as_mut()
             .unwrap()
             .get(&TypeId::of::<T>())
             .unwrap()
-            .try_borrow_mut()
-            .unwrap_or_else(|e| match e {
-                ManualCellError::AlreadyBorrowed => panic!(
-                    "cannot borrow {} mutably because it was already borrowed immutably",
-                    type_name::<T>().rsplit("::").next().unwrap()
-                ),
-                ManualCellError::AlreadyBorrowedMut => panic!(
-                    "cannot borrow {} mutably more than once",
-                    type_name::<T>().rsplit("::").next().unwrap()
-                ),
-            })
+            .get()
+            .as_mut()
+            .unwrap_unchecked()
             .downcast_mut()
-            .unwrap()
+            .unwrap_unchecked()
+    }
+
+    fn desc() -> ArgDesc {
+        ArgDesc {
+            tid: TypeId::of::<T>(),
+            tname: std::any::type_name::<T>().rsplit("::").next().unwrap(),
+            unique: true,
+        }
     }
 }
 
-pub struct CallbackArgs<'a>(&'a mut HashMap<TypeId, ManualCell<Box<dyn Any>>>);
+pub struct CallbackArgs<'a>(&'a mut HashMap<TypeId, UnsafeCell<Box<dyn Any>>>);
 
 pub trait Callback<Args> {
     fn call(&self, args: CallbackArgs);
+    fn assert_legal();
 }
 
 macro_rules! impl_callback {
@@ -170,6 +94,21 @@ macro_rules! impl_callback {
         impl<$($first$(, $($other),+)?,)? Func> Callback<($($first$(, $($other),+)?)?,)> for Func where Func: Fn($($first$(, $($other),+)?,)?), $($first: Argable$(, $($other: Argable),+)?,)? {
             fn call(&self, args: CallbackArgs) {
                 unsafe { self($($first::get(args.0)$(, $($other::get(args.0)),+)?,)?) }
+            }
+
+            fn assert_legal() {
+                let arg_types = &[$($first::desc()$(, $($other::desc()),+)?,)?];
+                for (i, a) in arg_types.iter().enumerate() {
+                    for (j, b) in arg_types.iter().enumerate() {
+                        if i != j && a.tid == b.tid {
+                            if a.unique && b.unique {
+                                panic!("callback requesting multiple unique references to {}", a.tname);
+                            } else if a.unique || b.unique {
+                                panic!("callback requesting both unique and shared references to {}", a.tname);
+                            }
+                        }
+                    }
+                }
             }
         }
         $($(impl_callback!($($other),+);)?)?
@@ -181,8 +120,8 @@ impl_callback!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V,
 pub struct App {
     title: Cow<'static, str>,
     size: (u32, u32),
-    state: HashMap<TypeId, ManualCell<Box<dyn Any>>>,
-    callbacks: Box<dyn Fn(&mut HashMap<TypeId, ManualCell<Box<dyn Any>>>)>,
+    state: HashMap<TypeId, UnsafeCell<Box<dyn Any>>>,
+    callbacks: Box<dyn Fn(&mut HashMap<TypeId, UnsafeCell<Box<dyn Any>>>)>,
 }
 
 impl App {
@@ -207,18 +146,16 @@ impl App {
 
     pub fn add_state<T: 'static>(mut self, state: T) -> App {
         self.state
-            .insert(TypeId::of::<T>(), ManualCell::new(Box::new(state)));
+            .insert(TypeId::of::<T>(), UnsafeCell::new(Box::new(state)));
         self
     }
 
     pub fn add_callback<'a, Args, T: Callback<Args> + 'static>(mut self, callback: T) -> App {
+        T::assert_legal();
         replace_with(&mut self.callbacks, |cbs| {
             Box::new(move |args: &mut _| {
                 cbs(args);
                 callback.call(CallbackArgs(args));
-                for cell in args.values_mut() {
-                    cell.free();
-                }
             })
         });
         self
@@ -246,16 +183,16 @@ impl App {
 
         self.state.insert(
             TypeId::of::<Input>(),
-            ManualCell::new(Box::new(Input::new())),
+            UnsafeCell::new(Box::new(Input::new())),
         );
 
         'running: loop {
             {
-                let mut input = self
-                    .state
-                    .get(&TypeId::of::<Input>())
-                    .unwrap()
-                    .take_downcast_guarded::<Input>();
+                let input = unsafe {
+                    (&mut *self.state.get(&TypeId::of::<Input>()).unwrap().get())
+                        .downcast_mut::<Input>()
+                        .unwrap_unchecked()
+                };
 
                 input.update();
 
