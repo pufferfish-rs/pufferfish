@@ -7,6 +7,7 @@ use fugu::Context;
 use sdl2::event::Event;
 use sdl2::video::GLProfile;
 
+use crate::graphics::Graphics;
 use crate::input::{self, Input};
 
 struct AbortOnDrop;
@@ -29,7 +30,9 @@ fn replace_with<T, F: FnOnce(T) -> T>(dest: &mut T, f: F) {
 
 fn type_name<T>() -> &'static str {
     let s = std::any::type_name::<T>();
-    &s[s.rmatch_indices("::").find_map(|(j, _)| (s.find('<').unwrap_or(s.len()) > j).then(|| j + 2)).unwrap_or(0)..]
+    &s[s.rmatch_indices("::")
+        .find_map(|(j, _)| (s.find('<').unwrap_or(s.len()) > j).then(|| j + 2))
+        .unwrap_or(0)..]
 }
 
 struct ArgDesc {
@@ -182,9 +185,16 @@ impl App {
         gl_attr.set_context_profile(GLProfile::Core);
 
         let _gl = window.gl_create_context().unwrap();
-        let _ctx = Context::new(|s| video_subsystem.gl_get_proc_address(s).cast());
+        let ctx = Context::new(|s| video_subsystem.gl_get_proc_address(s).cast());
 
         let mut event_pump = sdl_context.event_pump().unwrap();
+
+        let mut graphics = Graphics::new(ctx);
+        graphics.set_viewport(self.size);
+        self.state.insert(
+            TypeId::of::<Graphics>(),
+            UnsafeCell::new(Box::new(graphics)),
+        );
 
         self.state.insert(
             TypeId::of::<Input>(),
