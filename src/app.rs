@@ -128,6 +128,7 @@ impl_callback!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V,
 pub struct App {
     title: Cow<'static, str>,
     size: (u32, u32),
+    vsync: bool,
     state: HashMap<TypeId, UnsafeCell<Box<dyn Any>>>,
     callbacks: Box<dyn Fn(&mut HashMap<TypeId, UnsafeCell<Box<dyn Any>>>)>,
 }
@@ -137,6 +138,7 @@ impl App {
         App {
             title: "Pufferfish".into(),
             size: (800, 600),
+            vsync: true,
             state: HashMap::new(),
             callbacks: Box::new(|_| {}),
         }
@@ -149,6 +151,11 @@ impl App {
 
     pub fn with_size(mut self, width: u32, height: u32) -> App {
         self.size = (width, height);
+        self
+    }
+
+    pub fn with_vsync(mut self, vsync: bool) -> App {
+        self.vsync = vsync;
         self
     }
 
@@ -180,6 +187,7 @@ impl App {
             .build()
             .unwrap();
 
+        video_subsystem.gl_set_swap_interval(if self.vsync { 1 } else { 0 }).ok();
         let gl_attr = video_subsystem.gl_attr();
         gl_attr.set_context_version(3, 3);
         gl_attr.set_context_profile(GLProfile::Core);
