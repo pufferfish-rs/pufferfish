@@ -3,12 +3,8 @@ use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::collections::HashMap;
 
-use fugu::Context;
-use sdl2::event::Event;
-use sdl2::video::GLProfile;
-
-use crate::graphics::Graphics;
-use crate::input::{self, Input};
+mod sdl;
+use sdl as backend;
 
 struct AbortOnDrop;
 
@@ -176,80 +172,7 @@ impl App {
         self
     }
 
-    pub fn run(mut self) {
-        let sdl_context = sdl2::init().unwrap();
-        let video_subsystem = sdl_context.video().unwrap();
-
-        let window = video_subsystem
-            .window(&self.title, self.size.0, self.size.1)
-            .position_centered()
-            .opengl()
-            .build()
-            .unwrap();
-
-        video_subsystem.gl_set_swap_interval(if self.vsync { 1 } else { 0 }).ok();
-        let gl_attr = video_subsystem.gl_attr();
-        gl_attr.set_context_version(3, 3);
-        gl_attr.set_context_profile(GLProfile::Core);
-
-        let _gl = window.gl_create_context().unwrap();
-        let ctx = Context::new(|s| video_subsystem.gl_get_proc_address(s).cast());
-
-        let mut event_pump = sdl_context.event_pump().unwrap();
-
-        let mut graphics = Graphics::new(ctx);
-        graphics.set_viewport(self.size);
-        self.state.insert(
-            TypeId::of::<Graphics>(),
-            UnsafeCell::new(Box::new(graphics)),
-        );
-
-        self.state.insert(
-            TypeId::of::<Input>(),
-            UnsafeCell::new(Box::new(Input::new())),
-        );
-
-        'running: loop {
-            {
-                let input = unsafe {
-                    (&mut *self.state.get(&TypeId::of::<Input>()).unwrap().get())
-                        .downcast_mut::<Input>()
-                        .unwrap_unchecked()
-                };
-
-                input.update();
-
-                for event in event_pump.poll_iter() {
-                    match event {
-                        Event::Quit { .. } => break 'running,
-                        Event::KeyDown {
-                            keycode, repeat, ..
-                        } => {
-                            if let (Some(key), false) = (input::keycode_from_sdl(keycode), repeat) {
-                                if !input.keys_down.contains(&key) {
-                                    input.keys_down.push(key);
-                                }
-                                if !input.keys_pressed.contains(&key) {
-                                    input.keys_pressed.push(key);
-                                }
-                            }
-                        }
-                        Event::KeyUp {
-                            keycode, repeat, ..
-                        } => {
-                            if let (Some(key), false) = (input::keycode_from_sdl(keycode), repeat) {
-                                input.keys_down.retain(|&k| k != key);
-                                input.keys_released.push(key);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-
-            (self.callbacks.as_ref())(&mut self.state);
-
-            window.gl_swap_window();
-        }
+    pub fn run(self) {
+        backend::run(self);
     }
 }
