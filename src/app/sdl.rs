@@ -1,6 +1,4 @@
-#![cfg(feature="sdl")]
-
-use std::any::TypeId;
+#![cfg(feature = "sdl")]
 
 use fugu::Context;
 use sdl2::event::{Event, WindowEvent};
@@ -16,7 +14,7 @@ pub fn run(mut app: App) {
     let video_subsystem = sdl_context.video().unwrap();
 
     let mut window_builder = video_subsystem.window(&app.title, app.size.0, app.size.1);
-    
+
     window_builder.opengl();
 
     if app.resizable {
@@ -40,23 +38,13 @@ pub fn run(mut app: App) {
     app.init(ctx);
 
     {
-        let graphics = unsafe {
-            (&mut *app.state.get(&TypeId::of::<Graphics>()).unwrap().get())
-                .downcast_mut::<Graphics>()
-                .unwrap_unchecked()
-        };
-
+        let graphics = unsafe { app.state.get_mut::<Graphics>().unwrap_unchecked() };
         graphics.set_viewport((app.size.0, app.size.1));
     }
 
     'running: loop {
         {
-            let input = unsafe {
-                (&mut *app.state.get(&TypeId::of::<Input>()).unwrap().get())
-                    .downcast_mut::<Input>()
-                    .unwrap_unchecked()
-            };
-
+            let input = unsafe { app.state.get_mut::<Input>().unwrap_unchecked() };
             input.update();
 
             for event in event_pump.poll_iter() {
@@ -64,12 +52,8 @@ pub fn run(mut app: App) {
                     Event::Quit { .. } => break 'running,
                     Event::Window { win_event, .. } => match win_event {
                         WindowEvent::Resized(w, h) => {
-                            let graphics = unsafe {
-                                (&mut *app.state.get(&TypeId::of::<Graphics>()).unwrap().get())
-                                    .downcast_mut::<Graphics>()
-                                    .unwrap_unchecked()
-                            };
-
+                            let graphics =
+                                unsafe { app.state.get_mut::<Graphics>().unwrap_unchecked() };
                             graphics.set_viewport((w as u32, h as u32));
                         }
                         _ => {}

@@ -1,6 +1,4 @@
-#![cfg(feature="glutin")]
-
-use std::any::TypeId;
+#![cfg(feature = "glutin")]
 
 use fugu::Context;
 use glutin::dpi::PhysicalSize;
@@ -33,23 +31,14 @@ pub fn run(mut app: App) {
     app.init(ctx);
 
     {
-        let graphics = unsafe {
-            (&mut *app.state.get(&TypeId::of::<Graphics>()).unwrap().get())
-                .downcast_mut::<Graphics>()
-                .unwrap_unchecked()
-        };
-
+        let graphics = unsafe { app.state.get_mut::<Graphics>().unwrap_unchecked() };
         graphics.set_viewport((app.size.0, app.size.1));
     }
 
     el.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
 
-        let input = unsafe {
-            (&mut *app.state.get(&TypeId::of::<Input>()).unwrap().get())
-                .downcast_mut::<Input>()
-                .unwrap_unchecked()
-        };
+        let input = unsafe { app.state.get_mut::<Input>().unwrap_unchecked() };
         input.update();
 
         match event {
@@ -57,12 +46,7 @@ pub fn run(mut app: App) {
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
                 WindowEvent::Resized(size) => {
-                    let graphics = unsafe {
-                        (&mut *app.state.get(&TypeId::of::<Graphics>()).unwrap().get())
-                            .downcast_mut::<Graphics>()
-                            .unwrap_unchecked()
-                    };
-            
+                    let graphics = unsafe { app.state.get_mut::<Graphics>().unwrap_unchecked() };
                     graphics.set_viewport((size.width, size.height));
                 }
                 WindowEvent::KeyboardInput {

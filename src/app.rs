@@ -8,12 +8,12 @@ use fugu::Context;
 use crate::graphics::Graphics;
 use crate::input::Input;
 
-mod sdl;
 mod glutin;
+mod sdl;
 
-#[cfg(feature="glutin")]
+#[cfg(feature = "glutin")]
 use self::glutin as backend;
-#[cfg(feature="sdl")]
+#[cfg(feature = "sdl")]
 use self::sdl as backend;
 
 struct AbortOnDrop;
@@ -48,21 +48,13 @@ struct ArgDesc {
 }
 
 trait Argable {
-    unsafe fn get(args: *mut HashMap<TypeId, UnsafeCell<Box<dyn Any>>>) -> Self;
+    unsafe fn get(args: *mut TypeMap) -> Self;
     fn desc() -> ArgDesc;
 }
 
 impl<T: 'static> Argable for &T {
-    unsafe fn get(args: *mut HashMap<TypeId, UnsafeCell<Box<dyn Any>>>) -> Self {
-        args.as_mut()
-            .unwrap()
-            .get(&TypeId::of::<T>())
-            .unwrap()
-            .get()
-            .as_ref()
-            .unwrap_unchecked()
-            .downcast_ref()
-            .unwrap_unchecked()
+    unsafe fn get(args: *mut TypeMap) -> Self {
+        args.as_mut().unwrap_unchecked().get::<T>().unwrap()
     }
 
     fn desc() -> ArgDesc {
@@ -75,16 +67,8 @@ impl<T: 'static> Argable for &T {
 }
 
 impl<T: 'static> Argable for &mut T {
-    unsafe fn get(args: *mut HashMap<TypeId, UnsafeCell<Box<dyn Any>>>) -> Self {
-        args.as_mut()
-            .unwrap()
-            .get(&TypeId::of::<T>())
-            .unwrap()
-            .get()
-            .as_mut()
-            .unwrap_unchecked()
-            .downcast_mut()
-            .unwrap_unchecked()
+    unsafe fn get(args: *mut TypeMap) -> Self {
+        args.as_mut().unwrap_unchecked().get_mut::<T>().unwrap()
     }
 
     fn desc() -> ArgDesc {
@@ -96,18 +80,53 @@ impl<T: 'static> Argable for &mut T {
     }
 }
 
-pub struct CallbackArgs<'a>(&'a mut HashMap<TypeId, UnsafeCell<Box<dyn Any>>>);
+pub struct TypeMap {
+    inner: HashMap<TypeId, UnsafeCell<Box<dyn Any>>>,
+}
+
+impl TypeMap {
+    pub fn new() -> Self {
+        Self {
+            inner: HashMap::new(),
+        }
+    }
+
+    pub fn insert<T: 'static>(&mut self, v: T) {
+        self.inner
+            .insert(TypeId::of::<T>(), UnsafeCell::new(Box::new(v)));
+    }
+
+    unsafe fn get<T: 'static>(&self) -> Option<&T> {
+        self.inner.get(&TypeId::of::<T>()).map(|v| {
+            v.get()
+                .as_ref()
+                .unwrap_unchecked()
+                .downcast_ref::<T>()
+                .unwrap_unchecked()
+        })
+    }
+
+    unsafe fn get_mut<T: 'static>(&self) -> Option<&mut T> {
+        self.inner.get(&TypeId::of::<T>()).map(|v| {
+            v.get()
+                .as_mut()
+                .unwrap_unchecked()
+                .downcast_mut::<T>()
+                .unwrap_unchecked()
+        })
+    }
+}
 
 pub trait Callback<Args> {
-    fn call(&self, args: CallbackArgs);
+    fn call(&self, args: &mut TypeMap);
     fn assert_legal();
 }
 
 macro_rules! impl_callback {
     ($($first:ident$(, $($other:ident),+)?$(,)?)?) => {
         impl<$($first$(, $($other),+)?,)? Func> Callback<($($first$(, $($other),+)?)?,)> for Func where Func: Fn($($first$(, $($other),+)?,)?), $($first: Argable$(, $($other: Argable),+)?,)? {
-            fn call(&self, args: CallbackArgs) {
-                unsafe { self($($first::get(args.0)$(, $($other::get(args.0)),+)?,)?) }
+            fn call(&self, args: &mut TypeMap) {
+                unsafe { self($($first::get(args)$(, $($other::get(args)),+)?,)?) }
             }
 
             fn assert_legal() {
@@ -136,8 +155,8 @@ pub struct App {
     size: (u32, u32),
     vsync: bool,
     resizable: bool,
-    state: HashMap<TypeId, UnsafeCell<Box<dyn Any>>>,
-    callbacks: Box<dyn Fn(&mut HashMap<TypeId, UnsafeCell<Box<dyn Any>>>)>,
+    state: TypeMap,
+    callbacks: Box<dyn Fn(&mut TypeMap)>,
 }
 
 impl App {
@@ -147,7 +166,7 @@ impl App {
             size: (800, 600),
             vsync: true,
             resizable: true,
-            state: HashMap::new(),
+            state: TypeMap::new(),
             callbacks: Box::new(|_| {}),
         }
     }
@@ -173,17 +192,16 @@ impl App {
     }
 
     pub fn add_state<T: 'static>(mut self, state: T) -> App {
-        self.state
-            .insert(TypeId::of::<T>(), UnsafeCell::new(Box::new(state)));
+        self.state.insert(state);
         self
     }
 
     pub fn add_callback<'a, Args, T: Callback<Args> + 'static>(mut self, callback: T) -> App {
         T::assert_legal();
         replace_with(&mut self.callbacks, |cbs| {
-            Box::new(move |args: &mut _| {
+            Box::new(move |args| {
                 cbs(args);
-                callback.call(CallbackArgs(args));
+                callback.call(args);
             })
         });
         self
@@ -194,13 +212,7 @@ impl App {
     }
 
     fn init(&mut self, ctx: Context) {
-        self.state.insert(
-            TypeId::of::<Graphics>(),
-            UnsafeCell::new(Box::new(Graphics::new(ctx))),
-        );
-        self.state.insert(
-            TypeId::of::<Input>(),
-            UnsafeCell::new(Box::new(Input::new())),
-        );
+        self.state.insert(Graphics::new(ctx));
+        self.state.insert(Input::new());
     }
 }
