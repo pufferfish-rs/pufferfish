@@ -3,8 +3,18 @@ use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::collections::HashMap;
 
+use fugu::Context;
+
+use crate::graphics::Graphics;
+use crate::input::Input;
+
 mod sdl;
-use sdl as backend;
+mod glutin;
+
+#[cfg(feature="glutin")]
+use self::glutin as backend;
+#[cfg(feature="sdl")]
+use self::sdl as backend;
 
 struct AbortOnDrop;
 
@@ -125,6 +135,7 @@ pub struct App {
     title: Cow<'static, str>,
     size: (u32, u32),
     vsync: bool,
+    resizable: bool,
     state: HashMap<TypeId, UnsafeCell<Box<dyn Any>>>,
     callbacks: Box<dyn Fn(&mut HashMap<TypeId, UnsafeCell<Box<dyn Any>>>)>,
 }
@@ -135,6 +146,7 @@ impl App {
             title: "Pufferfish".into(),
             size: (800, 600),
             vsync: true,
+            resizable: true,
             state: HashMap::new(),
             callbacks: Box::new(|_| {}),
         }
@@ -152,6 +164,11 @@ impl App {
 
     pub fn with_vsync(mut self, vsync: bool) -> App {
         self.vsync = vsync;
+        self
+    }
+
+    pub fn with_resizable(mut self, resizable: bool) -> App {
+        self.resizable = resizable;
         self
     }
 
@@ -174,5 +191,16 @@ impl App {
 
     pub fn run(self) {
         backend::run(self);
+    }
+
+    fn init(&mut self, ctx: Context) {
+        self.state.insert(
+            TypeId::of::<Graphics>(),
+            UnsafeCell::new(Box::new(Graphics::new(ctx))),
+        );
+        self.state.insert(
+            TypeId::of::<Input>(),
+            UnsafeCell::new(Box::new(Input::new())),
+        );
     }
 }

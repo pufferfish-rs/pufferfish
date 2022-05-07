@@ -1,25 +1,29 @@
+#![cfg(feature="sdl")]
+
 use std::any::TypeId;
-use std::cell::UnsafeCell;
 
 use fugu::Context;
-use sdl2::event::Event;
+use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::Keycode as SDLKeyCode;
 use sdl2::video::GLProfile;
 
-use crate::App;
 use crate::graphics::Graphics;
 use crate::input::{Input, KeyCode};
+use crate::App;
 
 pub fn run(mut app: App) {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
-    let window = video_subsystem
-        .window(&app.title, app.size.0, app.size.1)
-        .position_centered()
-        .opengl()
-        .build()
-        .unwrap();
+    let mut window_builder = video_subsystem.window(&app.title, app.size.0, app.size.1);
+    
+    window_builder.opengl();
+
+    if app.resizable {
+        window_builder.resizable();
+    }
+
+    let window = window_builder.build().unwrap();
 
     video_subsystem
         .gl_set_swap_interval(if app.vsync { 1 } else { 0 })
@@ -33,18 +37,17 @@ pub fn run(mut app: App) {
 
     let mut event_pump = sdl_context.event_pump().unwrap();
 
-    let mut graphics = Graphics::new(ctx);
-    graphics.set_viewport(app.size);
+    app.init(ctx);
 
-    app.state.insert(
-        TypeId::of::<Graphics>(),
-        UnsafeCell::new(Box::new(graphics)),
-    );
+    {
+        let graphics = unsafe {
+            (&mut *app.state.get(&TypeId::of::<Graphics>()).unwrap().get())
+                .downcast_mut::<Graphics>()
+                .unwrap_unchecked()
+        };
 
-    app.state.insert(
-        TypeId::of::<Input>(),
-        UnsafeCell::new(Box::new(Input::new())),
-    );
+        graphics.set_viewport((app.size.0, app.size.1));
+    }
 
     'running: loop {
         {
@@ -59,10 +62,22 @@ pub fn run(mut app: App) {
             for event in event_pump.poll_iter() {
                 match event {
                     Event::Quit { .. } => break 'running,
+                    Event::Window { win_event, .. } => match win_event {
+                        WindowEvent::Resized(w, h) => {
+                            let graphics = unsafe {
+                                (&mut *app.state.get(&TypeId::of::<Graphics>()).unwrap().get())
+                                    .downcast_mut::<Graphics>()
+                                    .unwrap_unchecked()
+                            };
+
+                            graphics.set_viewport((w as u32, h as u32));
+                        }
+                        _ => {}
+                    },
                     Event::KeyDown {
                         keycode, repeat, ..
                     } => {
-                        if let (Some(key), false) = (keycode_from_sdl(keycode), repeat) {
+                        if let (Some(key), false) = (convert_keycode(keycode), repeat) {
                             if !input.keys_down.contains(&key) {
                                 input.keys_down.push(key);
                             }
@@ -74,7 +89,7 @@ pub fn run(mut app: App) {
                     Event::KeyUp {
                         keycode, repeat, ..
                     } => {
-                        if let (Some(key), false) = (keycode_from_sdl(keycode), repeat) {
+                        if let (Some(key), false) = (convert_keycode(keycode), repeat) {
                             input.keys_down.retain(|&k| k != key);
                             input.keys_released.push(key);
                         }
@@ -90,7 +105,7 @@ pub fn run(mut app: App) {
     }
 }
 
-fn keycode_from_sdl(keycode: Option<SDLKeyCode>) -> Option<KeyCode> {
+fn convert_keycode(keycode: Option<SDLKeyCode>) -> Option<KeyCode> {
     keycode.and_then(|keycode| match keycode {
         SDLKeyCode::A => Some(KeyCode::A),
         SDLKeyCode::B => Some(KeyCode::B),
