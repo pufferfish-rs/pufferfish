@@ -156,9 +156,7 @@ impl Graphics {
         self.ctx.end_render_pass();
     }
 
-    pub fn begin(&mut self) {
-        
-    }
+    pub fn begin(&mut self) {}
 
     pub fn set_color(&mut self, color: Color) {
         self.color = color;

@@ -96,7 +96,7 @@ impl TypeMap {
             .insert(TypeId::of::<T>(), UnsafeCell::new(Box::new(v)));
     }
 
-    unsafe fn get<T: 'static>(&self) -> Option<&T> {
+    pub unsafe fn get<T: 'static>(&self) -> Option<&T> {
         self.inner.get(&TypeId::of::<T>()).map(|v| {
             v.get()
                 .as_ref()
@@ -106,7 +106,7 @@ impl TypeMap {
         })
     }
 
-    unsafe fn get_mut<T: 'static>(&self) -> Option<&mut T> {
+    pub unsafe fn get_mut<T: 'static>(&self) -> Option<&mut T> {
         self.inner.get(&TypeId::of::<T>()).map(|v| {
             v.get()
                 .as_mut()
