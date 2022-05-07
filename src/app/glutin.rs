@@ -31,6 +31,7 @@ pub fn run(mut app: App) {
     app.init(ctx);
 
     {
+        // SAFETY: We are guaranteed to have `Graphics`
         let graphics = unsafe { app.state.get_mut::<Graphics>().unwrap_unchecked() };
         graphics.set_viewport((app.size.0, app.size.1));
     }
@@ -38,14 +39,15 @@ pub fn run(mut app: App) {
     el.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
 
+        // SAFETY: We are guaranteed to have `Input`
         let input = unsafe { app.state.get_mut::<Input>().unwrap_unchecked() };
         input.update();
 
         match event {
-            Event::LoopDestroyed => return,
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
                 WindowEvent::Resized(size) => {
+                    // SAFETY: We are guaranteed to have `Graphics`
                     let graphics = unsafe { app.state.get_mut::<Graphics>().unwrap_unchecked() };
                     graphics.set_viewport((size.width, size.height));
                 }
@@ -77,7 +79,6 @@ pub fn run(mut app: App) {
                 _ => (),
             },
             Event::RedrawRequested(_) => {
-                drop(input);
                 (app.callbacks.as_ref())(&mut app.state);
                 windowed_context.swap_buffers().unwrap();
             }

@@ -38,26 +38,29 @@ pub fn run(mut app: App) {
     app.init(ctx);
 
     {
+        // SAFETY: We are guaranteed to have `Graphics`
         let graphics = unsafe { app.state.get_mut::<Graphics>().unwrap_unchecked() };
         graphics.set_viewport((app.size.0, app.size.1));
     }
 
     'running: loop {
         {
+            // SAFETY: We are guaranteed to have `Input`
             let input = unsafe { app.state.get_mut::<Input>().unwrap_unchecked() };
             input.update();
 
             for event in event_pump.poll_iter() {
                 match event {
                     Event::Quit { .. } => break 'running,
-                    Event::Window { win_event, .. } => match win_event {
-                        WindowEvent::Resized(w, h) => {
-                            let graphics =
-                                unsafe { app.state.get_mut::<Graphics>().unwrap_unchecked() };
-                            graphics.set_viewport((w as u32, h as u32));
-                        }
-                        _ => {}
-                    },
+                    Event::Window {
+                        win_event: WindowEvent::Resized(w, h),
+                        ..
+                    } => {
+                        // SAFETY: We are guaranteed to have `Graphics`
+                        let graphics =
+                            unsafe { app.state.get_mut::<Graphics>().unwrap_unchecked() };
+                        graphics.set_viewport((w as u32, h as u32));
+                    }
                     Event::KeyDown {
                         keycode, repeat, ..
                     } => {

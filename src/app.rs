@@ -25,6 +25,7 @@ impl Drop for AbortOnDrop {
 }
 
 fn replace_with<T, F: FnOnce(T) -> T>(dest: &mut T, f: F) {
+    // SAFETY: We abort if `f` panics, so we're guaranteed to end up with a valid value.
     unsafe {
         let old = std::ptr::read(dest);
         let abort = AbortOnDrop;
@@ -85,34 +86,40 @@ pub struct TypeMap {
 }
 
 impl TypeMap {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             inner: HashMap::new(),
         }
     }
 
-    pub fn insert<T: 'static>(&mut self, v: T) {
+    fn insert<T: 'static>(&mut self, v: T) {
         self.inner
             .insert(TypeId::of::<T>(), UnsafeCell::new(Box::new(v)));
     }
 
-    pub unsafe fn get<T: 'static>(&self) -> Option<&T> {
+    /// # Safety
+    ///
+    /// Aliasing rules must be enforced by the caller.
+    unsafe fn get<T: 'static>(&self) -> Option<&T> {
         self.inner.get(&TypeId::of::<T>()).map(|v| {
             v.get()
                 .as_ref()
-                .unwrap_unchecked()
+                .unwrap_unchecked() // SAFETY: null pointers cannot end up in the `TypeMap`
                 .downcast_ref::<T>()
-                .unwrap_unchecked()
+                .unwrap_unchecked() // SAFETY: the types are guaranteed to match
         })
     }
 
-    pub unsafe fn get_mut<T: 'static>(&self) -> Option<&mut T> {
+    /// # Safety
+    ///
+    /// Aliasing rules must be enforced by the caller.
+    unsafe fn get_mut<T: 'static>(&self) -> Option<&mut T> {
         self.inner.get(&TypeId::of::<T>()).map(|v| {
             v.get()
                 .as_mut()
-                .unwrap_unchecked()
+                .unwrap_unchecked() // SAFETY: null pointers cannot end up in the `TypeMap`
                 .downcast_mut::<T>()
-                .unwrap_unchecked()
+                .unwrap_unchecked() // SAFETY: the types are guaranteed to match
         })
     }
 }
@@ -126,6 +133,7 @@ macro_rules! impl_callback {
     ($($first:ident$(, $($other:ident),+)?$(,)?)?) => {
         impl<$($first$(, $($other),+)?,)? Func> Callback<($($first$(, $($other),+)?)?,)> for Func where Func: Fn($($first$(, $($other),+)?,)?), $($first: Argable$(, $($other: Argable),+)?,)? {
             fn call(&self, args: &mut TypeMap) {
+                // SAFETY: We already asserted that the callback signature is legal.
                 unsafe { self($($first::get(args)$(, $($other::get(args)),+)?,)?) }
             }
 
@@ -159,9 +167,9 @@ pub struct App {
     callbacks: Box<dyn Fn(&mut TypeMap)>,
 }
 
-impl App {
-    pub fn new() -> App {
-        App {
+impl Default for App {
+    fn default() -> Self {
+        Self {
             title: "Pufferfish".into(),
             size: (800, 600),
             vsync: true,
@@ -170,33 +178,39 @@ impl App {
             callbacks: Box::new(|_| {}),
         }
     }
+}
 
-    pub fn with_title(mut self, title: impl Into<Cow<'static, str>>) -> App {
+impl App {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_title(mut self, title: impl Into<Cow<'static, str>>) -> Self {
         self.title = title.into();
         self
     }
 
-    pub fn with_size(mut self, width: u32, height: u32) -> App {
+    pub fn with_size(mut self, width: u32, height: u32) -> Self {
         self.size = (width, height);
         self
     }
 
-    pub fn with_vsync(mut self, vsync: bool) -> App {
+    pub fn with_vsync(mut self, vsync: bool) -> Self {
         self.vsync = vsync;
         self
     }
 
-    pub fn with_resizable(mut self, resizable: bool) -> App {
+    pub fn with_resizable(mut self, resizable: bool) -> Self {
         self.resizable = resizable;
         self
     }
 
-    pub fn add_state<T: 'static>(mut self, state: T) -> App {
+    pub fn add_state<T: 'static>(mut self, state: T) -> Self {
         self.state.insert(state);
         self
     }
 
-    pub fn add_callback<'a, Args, T: Callback<Args> + 'static>(mut self, callback: T) -> App {
+    pub fn add_callback<Args, T: Callback<Args> + 'static>(mut self, callback: T) -> Self {
         T::assert_legal();
         replace_with(&mut self.callbacks, |cbs| {
             Box::new(move |args| {
