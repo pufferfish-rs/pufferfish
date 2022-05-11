@@ -1,7 +1,7 @@
 use std::any::{Any, TypeId};
 use std::borrow::Cow;
-use std::cell::UnsafeCell;
 use std::collections::HashMap;
+use std::ptr::NonNull;
 
 use fugu::Context;
 
@@ -82,7 +82,7 @@ impl<T: 'static> Argable for &mut T {
 }
 
 pub struct TypeMap {
-    inner: HashMap<TypeId, UnsafeCell<Box<dyn Any>>>,
+    inner: HashMap<TypeId, NonNull<dyn Any>>,
 }
 
 impl TypeMap {
@@ -93,8 +93,10 @@ impl TypeMap {
     }
 
     fn insert<T: 'static>(&mut self, v: T) {
-        self.inner
-            .insert(TypeId::of::<T>(), UnsafeCell::new(Box::new(v)));
+        // SAFETY: The pointer returned by Box::into_raw is guaranteed to be non-null.
+        self.inner.insert(TypeId::of::<T>(), unsafe {
+            NonNull::new_unchecked(Box::into_raw(Box::new(v)))
+        });
     }
 
     /// # Safety
@@ -102,11 +104,8 @@ impl TypeMap {
     /// Aliasing rules must be enforced by the caller.
     unsafe fn get<T: 'static>(&self) -> Option<&T> {
         self.inner.get(&TypeId::of::<T>()).map(|v| {
-            v.get()
-                .as_ref()
-                .unwrap_unchecked() // SAFETY: null pointers cannot end up in the `TypeMap`
-                .downcast_ref::<T>()
-                .unwrap_unchecked() // SAFETY: the types are guaranteed to match
+            // SAFETY: The types are guaranteed to match.
+            v.as_ref().downcast_ref::<T>().unwrap_unchecked()
         })
     }
 
@@ -115,12 +114,22 @@ impl TypeMap {
     /// Aliasing rules must be enforced by the caller.
     unsafe fn get_mut<T: 'static>(&self) -> Option<&mut T> {
         self.inner.get(&TypeId::of::<T>()).map(|v| {
-            v.get()
+            // SAFETY: The pointer is guaranteed to be non-null with matching types.
+            v.as_ptr()
                 .as_mut()
-                .unwrap_unchecked() // SAFETY: null pointers cannot end up in the `TypeMap`
-                .downcast_mut::<T>()
-                .unwrap_unchecked() // SAFETY: the types are guaranteed to match
+                .and_then(|e| e.downcast_mut::<T>())
+                .unwrap_unchecked()
         })
+    }
+}
+
+impl Drop for TypeMap {
+    fn drop(&mut self) {
+        for (_, v) in self.inner.drain() {
+            unsafe {
+                Box::from_raw(v.as_ptr());
+            }
+        }
     }
 }
 
