@@ -88,6 +88,10 @@ impl TypeMap {
     }
 
     fn insert<T: 'static>(&mut self, v: T) {
+        let type_id = TypeId::of::<T>();
+        self.inner.remove(&type_id).map(|v| unsafe {
+            Box::from_raw(v.as_ptr());
+        });
         // SAFETY: The pointer returned by Box::into_raw is guaranteed to be non-null.
         self.inner.insert(TypeId::of::<T>(), unsafe {
             NonNull::new_unchecked(Box::into_raw(Box::new(v)))
