@@ -1,5 +1,3 @@
-#![cfg(feature = "sdl")]
-
 use fugu::Context;
 use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::Keycode as SDLKeyCode;

@@ -8,12 +8,7 @@ use fugu::Context;
 use crate::graphics::Graphics;
 use crate::input::Input;
 
-mod glutin;
 mod sdl;
-
-#[cfg(feature = "glutin")]
-use self::glutin as backend;
-#[cfg(feature = "sdl")]
 use self::sdl as backend;
 
 struct AbortOnDrop;
