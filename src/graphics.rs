@@ -123,7 +123,7 @@ pub struct Graphics {
 }
 
 impl Graphics {
-    pub(crate) fn new(ctx: Rc<Context>, resource_manager: &ResourceManager) -> Graphics {
+    pub(crate) fn new(ctx: &Rc<Context>, resource_manager: &ResourceManager) -> Graphics {
         ctx.set_blend(BlendState {
             op: BlendOp::Add,
             source: BlendFactor::SourceAlpha,
@@ -175,7 +175,7 @@ impl Graphics {
         let color = Color::from_rgb(1., 1., 1.);
 
         Graphics {
-            ctx,
+            ctx: ctx.clone(),
             resource_manager: resource_manager.clone(),
             pipeline,
             vertex_buffer,

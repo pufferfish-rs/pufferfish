@@ -38,7 +38,7 @@ pub fn run(mut app: App) {
 
     let resource_manager = ResourceManager::new();
 
-    app.init(ctx, &resource_manager);
+    app.init(&ctx, &resource_manager);
 
     {
         // SAFETY: We are guaranteed to have `Graphics`

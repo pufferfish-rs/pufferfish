@@ -21,26 +21,9 @@ fn main() {
             t: 0.,
             player: Player { x: 512., y: 384. },
         })
-        .add_init_callback(init_png_loader)
         .add_frame_callback(process_input)
         .add_frame_callback(draw)
         .run();
-}
-
-fn init_png_loader(g: &Graphics, assets: &mut Assets) {
-    let ctx = g.ctx.clone();
-    assets.add_loader("png", move |bytes| {
-        let (meta, data) = png_decoder::decode(bytes).unwrap();
-        Sprite::new(
-            &ctx,
-            meta.width,
-            meta.height,
-            fugu::ImageFormat::Rgba8,
-            fugu::ImageFilter::Nearest,
-            fugu::ImageWrap::Clamp,
-            &data,
-        )
-    });
 }
 
 fn process_input(state: &mut State, input: &Input) {

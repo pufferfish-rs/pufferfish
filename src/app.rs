@@ -7,7 +7,7 @@ use std::rc::Rc;
 use fugu::Context;
 
 use crate::assets::{Assets, ResourceManager};
-use crate::graphics::Graphics;
+use crate::graphics::{Graphics, Sprite};
 use crate::input::Input;
 use crate::util::{replace_with, type_name};
 
@@ -245,11 +245,31 @@ impl App {
         backend::run(self);
     }
 
-    fn init(&mut self, ctx: Rc<Context>, resource_manager: &ResourceManager) {
+    fn init(&mut self, ctx: &Rc<Context>, resource_manager: &ResourceManager) {
         self.state.insert(resource_manager.clone());
         self.state.insert(Graphics::new(ctx, resource_manager));
         self.state.insert(Input::new());
-        self.state.insert(Assets::new(resource_manager));
+
+        let mut assets = Assets::new(resource_manager);
+
+        #[cfg(feature="png-decoder")]
+        {
+            let ctx = ctx.clone();
+            assets.add_loader("png", move |bytes| {
+                let (meta, data) = png_decoder::decode(bytes).unwrap();
+                Sprite::new(
+                    &ctx,
+                    meta.width,
+                    meta.height,
+                    fugu::ImageFormat::Rgba8,
+                    fugu::ImageFilter::Nearest,
+                    fugu::ImageWrap::Clamp,
+                    &data,
+                )
+            });
+        }
+
+        self.state.insert(assets);
 
         (self.state_callbacks)(&mut self.state);
         (self.init_callbacks)(&mut self.state);
