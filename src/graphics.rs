@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use fugu::{
     BlendFactor, BlendOp, BlendState, Buffer, BufferKind, BufferLayout, BufferUsage, Context,
     Image, ImageFilter, ImageFormat, ImageUniform, ImageWrap, PassAction, Pipeline, Uniform,
@@ -109,7 +111,7 @@ struct DrawBatch {
 }
 
 pub struct Graphics {
-    pub ctx: Context,
+    pub ctx: Rc<Context>,
     resource_manager: ResourceManager,
     pipeline: Pipeline,
     vertex_buffer: Buffer,
@@ -121,7 +123,7 @@ pub struct Graphics {
 }
 
 impl Graphics {
-    pub(crate) fn new(ctx: Context, resource_manager: &ResourceManager) -> Graphics {
+    pub(crate) fn new(ctx: Rc<Context>, resource_manager: &ResourceManager) -> Graphics {
         ctx.set_blend(BlendState {
             op: BlendOp::Add,
             source: BlendFactor::SourceAlpha,
@@ -235,35 +237,37 @@ impl Graphics {
     }
 
     pub fn draw_sprite(&mut self, x: f32, y: f32, sprite: ResourceHandle<Sprite>) {
-        let Sprite { width, height, .. } = *self.resource_manager.get(sprite);
-        let w = width as f32;
-        let h = height as f32;
-        self.draw_commands.push(DrawCommand {
-            sprite: Some(sprite),
-            verts: vec![
-                Vertex {
-                    pos: (x, y),
-                    color: self.color,
-                    uv: (0., 0.),
-                },
-                Vertex {
-                    pos: (x + w, y),
-                    color: self.color,
-                    uv: (1., 0.),
-                },
-                Vertex {
-                    pos: (x + w, y + h),
-                    color: self.color,
-                    uv: (1., 1.),
-                },
-                Vertex {
-                    pos: (x, y + h),
-                    color: self.color,
-                    uv: (0., 1.),
-                },
-            ],
-            indices: vec![0, 3, 1, 1, 3, 2],
-        });
+        if let Some(s) = self.resource_manager.get(sprite) {
+            let Sprite { width, height, .. } = *s;
+            let w = width as f32;
+            let h = height as f32;
+            self.draw_commands.push(DrawCommand {
+                sprite: Some(sprite),
+                verts: vec![
+                    Vertex {
+                        pos: (x, y),
+                        color: self.color,
+                        uv: (0., 0.),
+                    },
+                    Vertex {
+                        pos: (x + w, y),
+                        color: self.color,
+                        uv: (1., 0.),
+                    },
+                    Vertex {
+                        pos: (x + w, y + h),
+                        color: self.color,
+                        uv: (1., 1.),
+                    },
+                    Vertex {
+                        pos: (x, y + h),
+                        color: self.color,
+                        uv: (0., 1.),
+                    },
+                ],
+                indices: vec![0, 3, 1, 1, 3, 2],
+            });
+        }
     }
 
     pub fn draw_sprite_scaled(
@@ -354,8 +358,11 @@ impl Graphics {
 
         for batch in batches {
             if let Some(sprite) = batch.sprite {
-                let sprite = self.resource_manager.get::<Sprite>(sprite);
-                self.ctx.set_images(&[&sprite.image]);
+                if let Some(sprite) = self.resource_manager.get::<Sprite>(sprite) {
+                    self.ctx.set_images(&[&sprite.image]);
+                } else {
+                    continue;
+                }
             } else {
                 self.ctx.set_images(&[&self.blank_image]);
             }

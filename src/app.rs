@@ -2,10 +2,11 @@ use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ptr::NonNull;
+use std::rc::Rc;
 
 use fugu::Context;
 
-use crate::assets::ResourceManager;
+use crate::assets::{ResourceManager, Assets};
 use crate::graphics::Graphics;
 use crate::input::Input;
 use crate::util::{replace_with, type_name};
@@ -198,7 +199,10 @@ impl App {
         self
     }
 
-    pub fn add_state_with<T: 'static, Args, F: Callback<Args, T> + 'static>(mut self, callback: F) -> Self {
+    pub fn add_state_with<T: 'static, Args, F: Callback<Args, T> + 'static>(
+        mut self,
+        callback: F,
+    ) -> Self {
         F::assert_legal();
         replace_with(&mut self.state_callbacks, |cbs| {
             Box::new(move |args| {
@@ -210,7 +214,10 @@ impl App {
         self
     }
 
-    pub fn add_frame_callback<Args, F: Callback<Args, ()> + 'static>(mut self, callback: F) -> Self {
+    pub fn add_frame_callback<Args, F: Callback<Args, ()> + 'static>(
+        mut self,
+        callback: F,
+    ) -> Self {
         F::assert_legal();
         replace_with(&mut self.frame_callbacks, |cbs| {
             Box::new(move |args| {
@@ -225,10 +232,11 @@ impl App {
         backend::run(self);
     }
 
-    fn init(&mut self, ctx: Context, resource_manager: &ResourceManager) {
+    fn init(&mut self, ctx: Rc<Context>, resource_manager: &ResourceManager) {
         self.state.insert(resource_manager.clone());
         self.state.insert(Graphics::new(ctx, resource_manager));
         self.state.insert(Input::new());
+        self.state.insert(Assets::new(resource_manager));
 
         (self.state_callbacks)(&mut self.state);
     }
