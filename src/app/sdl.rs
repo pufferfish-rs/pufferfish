@@ -3,6 +3,7 @@ use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::Keycode as SDLKeyCode;
 use sdl2::video::GLProfile;
 
+use crate::assets::ResourceManager;
 use crate::graphics::Graphics;
 use crate::input::{Input, KeyCode};
 use crate::App;
@@ -33,7 +34,9 @@ pub fn run(mut app: App) {
 
     let mut event_pump = sdl_context.event_pump().unwrap();
 
-    app.init(ctx);
+    let resource_manager = ResourceManager::new();
+
+    app.init(ctx, &resource_manager);
 
     {
         // SAFETY: We are guaranteed to have `Graphics`

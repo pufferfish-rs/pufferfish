@@ -5,6 +5,7 @@ use std::ptr::NonNull;
 
 use fugu::Context;
 
+use crate::assets::ResourceManager;
 use crate::graphics::Graphics;
 use crate::input::Input;
 use crate::util::{replace_with, type_name};
@@ -208,8 +209,8 @@ impl App {
         backend::run(self);
     }
 
-    fn init(&mut self, ctx: Context) {
-        self.state.insert(Graphics::new(ctx));
+    fn init(&mut self, ctx: Context, resource_manager: &ResourceManager) {
+        self.state.insert(resource_manager.clone());
         self.state.insert(Input::new());
     }
 }
