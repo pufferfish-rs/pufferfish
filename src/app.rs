@@ -252,7 +252,7 @@ impl App {
 
         let mut assets = Assets::new(resource_manager);
 
-        #[cfg(feature="png-decoder")]
+        #[cfg(feature = "png-decoder")]
         {
             let ctx = ctx.clone();
             assets.add_loader("png", move |bytes| {

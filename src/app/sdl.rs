@@ -32,7 +32,9 @@ pub fn run(mut app: App) {
     gl_attr.set_context_profile(GLProfile::Core);
 
     let _gl = window.gl_create_context().unwrap();
-    let ctx = Rc::new(Context::new(|s| video_subsystem.gl_get_proc_address(s).cast()));
+    let ctx = Rc::new(Context::new(|s| {
+        video_subsystem.gl_get_proc_address(s).cast()
+    }));
 
     let mut event_pump = sdl_context.event_pump().unwrap();
 

@@ -1,5 +1,5 @@
 use pufferfish::assets::Assets;
-use pufferfish::graphics::{Color, Graphics, Sprite};
+use pufferfish::graphics::{Color, Graphics};
 use pufferfish::input::{Input, KeyCode};
 use pufferfish::App;
 
