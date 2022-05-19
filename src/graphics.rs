@@ -1,8 +1,10 @@
 use fugu::{
-    Buffer, BufferKind, BufferLayout, BufferUsage, Context, Image, ImageFilter, ImageFormat,
-    ImageUniform, ImageWrap, PassAction, Pipeline, Uniform, UniformFormat, VertexAttribute,
-    VertexFormat,
+    BlendFactor, BlendOp, BlendState, Buffer, BufferKind, BufferLayout, BufferUsage, Context,
+    Image, ImageFilter, ImageFormat, ImageUniform, ImageWrap, PassAction, Pipeline, Uniform,
+    UniformFormat, VertexAttribute, VertexFormat,
 };
+
+use crate::assets::{ResourceHandle, ResourceManager};
 
 mod shader {
     pub const VERT: &str = r"
@@ -60,6 +62,31 @@ impl Color {
     }
 }
 
+pub struct Sprite {
+    image: Image,
+    width: u32,
+    height: u32,
+}
+
+impl Sprite {
+    pub fn new(
+        ctx: &Context,
+        width: u32,
+        height: u32,
+        format: ImageFormat,
+        filter: ImageFilter,
+        wrap: ImageWrap,
+        data: &[u8],
+    ) -> Self {
+        let image = ctx.create_image_with_data(width, height, format, filter, wrap, data);
+        Self {
+            image,
+            width,
+            height,
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Debug)]
 struct Vertex {
@@ -69,12 +96,21 @@ struct Vertex {
 }
 
 struct DrawCommand {
+    sprite: Option<ResourceHandle<Sprite>>,
     verts: Vec<Vertex>,
     indices: Vec<u16>,
 }
 
+#[derive(Debug)]
+struct DrawBatch {
+    sprite: Option<ResourceHandle<Sprite>>,
+    start: usize,
+    count: usize,
+}
+
 pub struct Graphics {
     pub ctx: Context,
+    resource_manager: ResourceManager,
     pipeline: Pipeline,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
@@ -85,7 +121,13 @@ pub struct Graphics {
 }
 
 impl Graphics {
-    pub(crate) fn new(ctx: Context) -> Graphics {
+    pub(crate) fn new(ctx: Context, resource_manager: &ResourceManager) -> Graphics {
+        ctx.set_blend(BlendState {
+            op: BlendOp::Add,
+            source: BlendFactor::SourceAlpha,
+            dest: BlendFactor::OneMinusSourceAlpha,
+        });
+
         let default_shader = ctx.create_shader(
             shader::VERT,
             shader::FRAG,
@@ -132,6 +174,7 @@ impl Graphics {
 
         Graphics {
             ctx,
+            resource_manager: resource_manager.clone(),
             pipeline,
             vertex_buffer,
             index_buffer,
@@ -164,6 +207,75 @@ impl Graphics {
 
     pub fn draw_rect(&mut self, x: f32, y: f32, w: f32, h: f32) {
         self.draw_commands.push(DrawCommand {
+            sprite: None,
+            verts: vec![
+                Vertex {
+                    pos: (x, y),
+                    color: self.color,
+                    uv: (0., 0.),
+                },
+                Vertex {
+                    pos: (x + w, y),
+                    color: self.color,
+                    uv: (1., 0.),
+                },
+                Vertex {
+                    pos: (x + w, y + h),
+                    color: self.color,
+                    uv: (1., 1.),
+                },
+                Vertex {
+                    pos: (x, y + h),
+                    color: self.color,
+                    uv: (0., 1.),
+                },
+            ],
+            indices: vec![0, 3, 1, 1, 3, 2],
+        });
+    }
+
+    pub fn draw_sprite(&mut self, x: f32, y: f32, sprite: ResourceHandle<Sprite>) {
+        let Sprite { width, height, .. } = *self.resource_manager.get(sprite);
+        let w = width as f32;
+        let h = height as f32;
+        self.draw_commands.push(DrawCommand {
+            sprite: Some(sprite),
+            verts: vec![
+                Vertex {
+                    pos: (x, y),
+                    color: self.color,
+                    uv: (0., 0.),
+                },
+                Vertex {
+                    pos: (x + w, y),
+                    color: self.color,
+                    uv: (1., 0.),
+                },
+                Vertex {
+                    pos: (x + w, y + h),
+                    color: self.color,
+                    uv: (1., 1.),
+                },
+                Vertex {
+                    pos: (x, y + h),
+                    color: self.color,
+                    uv: (0., 1.),
+                },
+            ],
+            indices: vec![0, 3, 1, 1, 3, 2],
+        });
+    }
+
+    pub fn draw_sprite_scaled(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        sprite: ResourceHandle<Sprite>,
+    ) {
+        self.draw_commands.push(DrawCommand {
+            sprite: Some(sprite),
             verts: vec![
                 Vertex {
                     pos: (x, y),
@@ -191,6 +303,10 @@ impl Graphics {
     }
 
     pub fn end(&mut self) {
+        if self.draw_commands.is_empty() {
+            return;
+        }
+
         self.ctx.begin_default_pass(PassAction::Nothing);
 
         self.ctx.set_pipeline(&self.pipeline);
@@ -199,10 +315,23 @@ impl Graphics {
         self.ctx.set_uniforms(self.viewport);
         self.ctx.set_images(&[&self.blank_image]);
 
+        let mut batches = Vec::new();
+        let mut curr_sprite = self.draw_commands[0].sprite;
+        let mut begin = 0;
+
         let mut verts = Vec::new();
         let mut indices = Vec::new();
 
         for draw_command in &self.draw_commands {
+            if curr_sprite != draw_command.sprite {
+                batches.push(DrawBatch {
+                    sprite: curr_sprite,
+                    start: begin,
+                    count: indices.len() - begin,
+                });
+                curr_sprite = draw_command.sprite;
+                begin = indices.len();
+            }
             indices.extend(
                 draw_command
                     .indices
@@ -214,10 +343,24 @@ impl Graphics {
         }
         self.draw_commands.clear();
 
+        batches.push(DrawBatch {
+            sprite: curr_sprite,
+            start: begin,
+            count: indices.len() - begin,
+        });
+
         self.vertex_buffer.update(&verts);
         self.index_buffer.update(&indices);
 
-        self.ctx.draw(0, indices.len(), 1);
+        for batch in batches {
+            if let Some(sprite) = batch.sprite {
+                let sprite = self.resource_manager.get::<Sprite>(sprite);
+                self.ctx.set_images(&[&sprite.image]);
+            } else {
+                self.ctx.set_images(&[&self.blank_image]);
+            }
+            self.ctx.draw(batch.start, batch.count, 1);
+        }
 
         self.ctx.end_render_pass();
     }

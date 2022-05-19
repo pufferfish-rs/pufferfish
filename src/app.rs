@@ -211,6 +211,7 @@ impl App {
 
     fn init(&mut self, ctx: Context, resource_manager: &ResourceManager) {
         self.state.insert(resource_manager.clone());
+        self.state.insert(Graphics::new(ctx, resource_manager));
         self.state.insert(Input::new());
     }
 }
