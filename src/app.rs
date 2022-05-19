@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use fugu::Context;
 
-use crate::assets::{ResourceManager, Assets};
+use crate::assets::{Assets, ResourceManager};
 use crate::graphics::Graphics;
 use crate::input::Input;
 use crate::util::{replace_with, type_name};
@@ -153,6 +153,7 @@ pub struct App {
     state: TypeMap,
     frame_callbacks: Box<dyn Fn(&mut TypeMap)>,
     state_callbacks: Box<dyn Fn(&mut TypeMap)>,
+    init_callbacks: Box<dyn Fn(&mut TypeMap)>,
 }
 
 impl Default for App {
@@ -165,6 +166,7 @@ impl Default for App {
             state: TypeMap::new(),
             frame_callbacks: Box::new(|_| {}),
             state_callbacks: Box::new(|_| {}),
+            init_callbacks: Box::new(|_| {}),
         }
     }
 }
@@ -228,6 +230,17 @@ impl App {
         self
     }
 
+    pub fn add_init_callback<Args, F: Callback<Args, ()> + 'static>(mut self, callback: F) -> Self {
+        F::assert_legal();
+        replace_with(&mut self.init_callbacks, |cbs| {
+            Box::new(move |args| {
+                cbs(args);
+                callback.call(args);
+            })
+        });
+        self
+    }
+
     pub fn run(self) {
         backend::run(self);
     }
@@ -239,5 +252,6 @@ impl App {
         self.state.insert(Assets::new(resource_manager));
 
         (self.state_callbacks)(&mut self.state);
+        (self.init_callbacks)(&mut self.state);
     }
 }
