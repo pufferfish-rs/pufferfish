@@ -3,3 +3,5 @@ pub use app::*;
 
 pub mod graphics;
 pub mod input;
+
+mod util;
