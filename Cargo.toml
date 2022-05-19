@@ -8,5 +8,5 @@ repository = "https://github.com/pufferfish-rs/pufferfish/"
 license = "Zlib OR MIT OR Apache-2.0"
 
 [dependencies]
-fugu = { git = "https://github.com/pufferfish-rs/fugu", rev = "2bea057" }
+fugu = { git = "https://github.com/pufferfish-rs/fugu", rev = "2caedeb" }
 sdl2 = { version = "0.35.2", features = ["bundled"] }
