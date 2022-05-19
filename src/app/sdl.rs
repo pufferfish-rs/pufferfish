@@ -87,7 +87,7 @@ pub fn run(mut app: App) {
             }
         }
 
-        (app.callbacks.as_ref())(&mut app.state);
+        (app.frame_callbacks.as_ref())(&mut app.state);
 
         window.gl_swap_window();
     }

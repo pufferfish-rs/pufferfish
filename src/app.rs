@@ -110,15 +110,15 @@ impl Drop for TypeMap {
     }
 }
 
-pub trait Callback<Args> {
-    fn call(&self, args: &mut TypeMap);
+pub trait Callback<Args, Output> {
+    fn call(&self, args: &mut TypeMap) -> Output;
     fn assert_legal();
 }
 
 macro_rules! impl_callback {
     ($($first:ident$(, $($other:ident),+)?$(,)?)?) => {
-        impl<$($first$(, $($other),+)?,)? Func> Callback<($($first$(, $($other),+)?)?,)> for Func where Func: Fn($($first$(, $($other),+)?,)?), $($first: Argable$(, $($other: Argable),+)?,)? {
-            fn call(&self, args: &mut TypeMap) {
+        impl<$($first$(, $($other),+)?,)? Func, Output> Callback<($($first$(, $($other),+)?)?,), Output> for Func where Func: Fn($($first$(, $($other),+)?,)?) -> Output, $($first: Argable$(, $($other: Argable),+)?,)? {
+            fn call(&self, args: &mut TypeMap) -> Output {
                 // SAFETY: We already asserted that the callback signature is legal.
                 unsafe { self($($first::get(args)$(, $($other::get(args)),+)?,)?) }
             }
@@ -150,7 +150,8 @@ pub struct App {
     vsync: bool,
     resizable: bool,
     state: TypeMap,
-    callbacks: Box<dyn Fn(&mut TypeMap)>,
+    frame_callbacks: Box<dyn Fn(&mut TypeMap)>,
+    state_callbacks: Box<dyn Fn(&mut TypeMap)>,
 }
 
 impl Default for App {
@@ -161,7 +162,8 @@ impl Default for App {
             vsync: true,
             resizable: true,
             state: TypeMap::new(),
-            callbacks: Box::new(|_| {}),
+            frame_callbacks: Box::new(|_| {}),
+            state_callbacks: Box::new(|_| {}),
         }
     }
 }
@@ -196,9 +198,21 @@ impl App {
         self
     }
 
-    pub fn add_callback<Args, T: Callback<Args> + 'static>(mut self, callback: T) -> Self {
-        T::assert_legal();
-        replace_with(&mut self.callbacks, |cbs| {
+    pub fn add_state_with<T: 'static, Args, F: Callback<Args, T> + 'static>(mut self, callback: F) -> Self {
+        F::assert_legal();
+        replace_with(&mut self.state_callbacks, |cbs| {
+            Box::new(move |args| {
+                cbs(args);
+                let state = callback.call(args);
+                args.insert(state);
+            })
+        });
+        self
+    }
+
+    pub fn add_frame_callback<Args, F: Callback<Args, ()> + 'static>(mut self, callback: F) -> Self {
+        F::assert_legal();
+        replace_with(&mut self.frame_callbacks, |cbs| {
             Box::new(move |args| {
                 cbs(args);
                 callback.call(args);
@@ -215,5 +229,7 @@ impl App {
         self.state.insert(resource_manager.clone());
         self.state.insert(Graphics::new(ctx, resource_manager));
         self.state.insert(Input::new());
+
+        (self.state_callbacks)(&mut self.state);
     }
 }
