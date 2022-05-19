@@ -49,6 +49,13 @@ impl<T: 'static> Debug for ResourceHandle<T> {
     }
 }
 
+fn transmute_handle<T, U>(handle: ResourceHandle<T>) -> ResourceHandle<U> {
+    ResourceHandle {
+        idx: handle.idx,
+        _marker: PhantomData,
+    }
+}
+
 pub struct ResourceRef<'a, T> {
     inner: Ref<'a, T>,
 }
@@ -122,8 +129,8 @@ impl ResourceManager {
 
 pub struct Assets {
     resource_manager: ResourceManager,
-    loaders: HashMap<TypeId, Box<dyn Any>>,
-    handles: HashMap<TypeId, Box<dyn Any>>,
+    loaders: HashMap<(TypeId, Cow<'static, str>), Box<dyn Any>>,
+    handles: HashMap<(TypeId, Cow<'static, str>), ResourceHandle<()>>,
 }
 
 impl Assets {
@@ -140,16 +147,10 @@ impl Assets {
         extension: impl Into<Cow<'static, str>>,
         loader: impl Fn(&[u8]) -> T + 'static,
     ) {
-        let loaders = unsafe {
-            self.loaders
-                .entry(TypeId::of::<T>())
-                .or_insert_with(|| {
-                    Box::new(HashMap::<Cow<'static, str>, Box<dyn Fn(&[u8]) -> T>>::new())
-                })
-                .downcast_mut::<HashMap<Cow<'static, str>, Box<dyn Fn(&[u8]) -> T>>>()
-                .unwrap_unchecked()
-        };
-        loaders.insert(extension.into(), Box::new(loader));
+        self.loaders.insert(
+            (TypeId::of::<T>(), extension.into()),
+            Box::<Box<dyn Fn(&[u8]) -> T>>::new(Box::new(loader)),
+        );
     }
 
     pub fn load<T: 'static>(&mut self, path: impl Into<Cow<'static, str>>) -> ResourceHandle<T> {
@@ -159,28 +160,24 @@ impl Assets {
         let type_id = TypeId::of::<T>();
         let path: Cow<'static, str> = path.into();
 
-        *unsafe {
-            self.handles
-                .entry(type_id)
-                .or_insert_with(|| Box::new(HashMap::<Cow<'static, str>, ResourceHandle<T>>::new()))
-                .downcast_mut::<HashMap<Cow<'static, str>, ResourceHandle<T>>>()
-                .unwrap_unchecked()
-        }
-        .entry(path.clone())
-        .or_insert_with(|| {
-            let path: &str = &path;
-            let path = Path::new(path);
-            let ext = path.extension().and_then(|e| e.to_str()).unwrap();
-            let loader = self
-                .loaders
-                .get(&type_id)
-                .and_then(|e| e.downcast_ref::<HashMap<Cow<str>, Box<dyn Fn(&[u8]) -> T>>>())
-                .and_then(|e| e.get(ext))
-                .unwrap();
-            let handle = self.resource_manager.allocate();
-            self.resource_manager
-                .set(handle, loader(&read(path).unwrap()));
-            handle
-        })
+        transmute_handle(
+            *self
+                .handles
+                .entry((type_id, path.clone()))
+                .or_insert_with(|| {
+                    let path: &str = &path;
+                    let path = Path::new(path);
+                    let ext = path.extension().and_then(|e| e.to_str()).unwrap();
+                    let loader = self
+                        .loaders
+                        .get(&(type_id, ext.into()))
+                        .and_then(|e| e.downcast_ref::<Box<dyn Fn(&[u8]) -> T + 'static>>())
+                        .unwrap();
+                    let handle = self.resource_manager.allocate();
+                    self.resource_manager
+                        .set(handle, loader(&read(path).unwrap()));
+                    transmute_handle(handle)
+                }),
+        )
     }
 }
