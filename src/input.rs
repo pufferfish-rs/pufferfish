@@ -1,5 +1,9 @@
+//! Types relating to user input.
+
+/// Symbolic names for virtual key codes.
 #[repr(u8)]
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
+#[allow(missing_docs)]
 pub enum KeyCode {
     A,
     B,
@@ -28,15 +32,25 @@ pub enum KeyCode {
     Y,
     Z,
 
+    // The '0' key above the alphabetic keys.
     Alpha0,
+    // The '1' key above the alphabetic keys.
     Alpha1,
+    // The '2' key above the alphabetic keys.
     Alpha2,
+    // The '3' key above the alphabetic keys.
     Alpha3,
+    // The '4' key above the alphabetic keys.
     Alpha4,
+    // The '5' key above the alphabetic keys.
     Alpha5,
+    // The '6' key above the alphabetic keys.
     Alpha6,
+    // The '7' key above the alphabetic keys.
     Alpha7,
+    // The '8' key above the alphabetic keys.
     Alpha8,
+    // The '9' key above the alphabetic keys.
     Alpha9,
 
     LeftControl,
@@ -47,6 +61,8 @@ pub enum KeyCode {
     RightAlt,
 }
 
+/// An interface for querying user input. Accessible from [`App`](crate::App) by
+/// default.
 pub struct Input {
     pub(crate) keys_down: Vec<KeyCode>,
     pub(crate) keys_pressed: Vec<KeyCode>,
@@ -87,12 +103,14 @@ impl Input {
         self.keys_down.iter().copied()
     }
 
-    /// Returns an iterator over all keys that were pressed since the last update.
+    /// Returns an iterator over all keys that were pressed since the last
+    /// update.
     pub fn get_keys_pressed(&self) -> impl Iterator<Item = KeyCode> + '_ {
         self.keys_pressed.iter().copied()
     }
 
-    /// Returns an iterator over all keys that were released since the last update.
+    /// Returns an iterator over all keys that were released since the last
+    /// update.
     pub fn get_keys_released(&self) -> impl Iterator<Item = KeyCode> + '_ {
         self.keys_released.iter().copied()
     }

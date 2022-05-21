@@ -1,3 +1,5 @@
+//! Types relating to graphics and drawing.
+
 use std::rc::Rc;
 
 use fugu::{
@@ -45,25 +47,33 @@ mod shader {
     ";
 }
 
+/// A linear RGBA color represented by 4 [f32]s.
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Color {
+    /// The red component of the color.
     pub r: f32,
+    /// The green component of the color.
     pub g: f32,
+    /// The blue component of the color.
     pub b: f32,
+    /// The alpha component of the color.
     pub a: f32,
 }
 
 impl Color {
+    /// Creates a new color with the given components.
     pub fn from_rgba(r: f32, g: f32, b: f32, a: f32) -> Color {
         Color { r, g, b, a }
     }
 
+    /// Creates a new color with the given components and an alpha of 1.
     pub fn from_rgb(r: f32, g: f32, b: f32) -> Color {
         Color { r, g, b, a: 1. }
     }
 }
 
+/// A sprite.
 pub struct Sprite {
     image: Image,
     width: u32,
@@ -71,6 +81,17 @@ pub struct Sprite {
 }
 
 impl Sprite {
+    /// Creates a new sprite from the given parameters.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - A reference to the [`Context`] to use to create the image.
+    /// * `width` - A `u32` representing the width of the sprite.
+    /// * `height` - A `u32` representing the height of the sprite.
+    /// * `format` - The color format of the image.
+    /// * `filter` - The filter to use when sampling the image.
+    /// * `wrap` - The wrap mode to use when sampling the image.
+    /// * `data` - A slice of the image data.
     pub fn new(
         ctx: &Context,
         width: u32,
@@ -78,9 +99,9 @@ impl Sprite {
         format: ImageFormat,
         filter: ImageFilter,
         wrap: ImageWrap,
-        data: &[u8],
+        data: impl AsRef<[u8]>,
     ) -> Self {
-        let image = ctx.create_image_with_data(width, height, format, filter, wrap, data);
+        let image = ctx.create_image_with_data(width, height, format, filter, wrap, data.as_ref());
         Self {
             image,
             width,
@@ -110,7 +131,10 @@ struct DrawBatch {
     count: usize,
 }
 
+/// An interface for hardware-accelerated 2D drawing. Accessible from
+/// [`App`](crate::App) by default.
 pub struct Graphics {
+    /// An [`Rc`] of the underlying [`Context`].
     pub ctx: Rc<Context>,
     resource_manager: ResourceManager,
     pipeline: Pipeline,
@@ -192,6 +216,7 @@ impl Graphics {
         self.viewport = (width as f32, height as f32);
     }
 
+    /// Immediately clears the screen to the given color.
     pub fn clear(&self, color: Color) {
         self.ctx.begin_default_pass(PassAction::Clear {
             color: Some((color.r, color.g, color.b, color.a)),
@@ -201,12 +226,15 @@ impl Graphics {
         self.ctx.end_render_pass();
     }
 
+    /// Begins drawing.
     pub fn begin(&mut self) {}
 
+    /// Sets the color to use when drawing.
     pub fn set_color(&mut self, color: Color) {
         self.color = color;
     }
 
+    /// Draws a rectangle at the given position with the given dimensions.
     pub fn draw_rect(&mut self, x: f32, y: f32, w: f32, h: f32) {
         self.draw_commands.push(DrawCommand {
             sprite: None,
@@ -236,6 +264,7 @@ impl Graphics {
         });
     }
 
+    /// Draws a sprite at the given position.
     pub fn draw_sprite(&mut self, x: f32, y: f32, sprite: ResourceHandle<Sprite>) {
         if let Some(s) = self.resource_manager.get(sprite) {
             let Sprite { width, height, .. } = *s;
@@ -270,6 +299,7 @@ impl Graphics {
         }
     }
 
+    /// Draws a sprite at the given position with the given dimensions.
     pub fn draw_sprite_scaled(
         &mut self,
         x: f32,
@@ -306,6 +336,7 @@ impl Graphics {
         });
     }
 
+    /// Ends drawing and commits everything to the screen.
     pub fn end(&mut self) {
         if self.draw_commands.is_empty() {
             return;

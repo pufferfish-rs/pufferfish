@@ -1,3 +1,30 @@
+//! Types relating to resource management and asset loading.
+//!
+//! All resources are backed by the [`ResourceManager`], which gives out
+//! [`ResourceHandle`]s to be used to access different resources of various
+//! types.
+//!
+//! The underlying resources can be accessed through the [`get`] method on
+//! [`ResourceManager`]. However, currently, the returned [`ResourceRef`]
+//! borrows the entire storage. This means that as long as a [`ResourceRef`] is
+//! alive, calling [`ResourceManager::allocate`] or calling
+//! [`ResourceManager::set`] on any resource handle will result in a runtime
+//! panic.
+//!
+//! Therefore, the [`ResourceRef`] **should not** be held on to for
+//! longer than necessary. The [`ResourceHandle`] should be kept around instead,
+//! and the [`ResourceRef`] should be reacquired each time it is needed.
+//!
+//! To make this easier, the internal storage of the [`ResourceManager`] is
+//! wrapped inside a [`Rc`]. This means cloning the [`ResourceManager`] is cheap
+//! and will return a new [`ResourceManager`] with the same internal storage.
+//! You are encouraged to keep around a copy if you need to access resources
+//! frequently.
+//!
+//! The restrictions described above may be relaxed in the future.
+//!
+//! [`get`]: ResourceManager::get
+
 use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::cell::{Ref, RefCell};
@@ -9,11 +36,37 @@ use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::rc::Rc;
 
+/// Central storage of resources used in the game. Accessible from
+/// [`App`](crate::App) by default.
+///
+/// For loading assets, you probably do not want to use this directly. In most
+/// cases, [Assets] should be used instead.
+///
+/// Cloning a [`ResourceManager`] will do a shallow copy, meaning copies will
+/// all use the same internal storage. You do not have to and should not wrap
+/// this type in an `Rc`.
+///
+/// See the [module-level documentation] for more information.
+///
+/// [module-level documentation]: self
 #[derive(Clone)]
 pub struct ResourceManager {
     storage: Rc<RefCell<HashMap<TypeId, Box<dyn Any>>>>,
 }
 
+/// A handle to a resource of type `T`.
+///
+/// A `ResourceHandle` can be acquired directly through the [`allocate`] method
+/// on [`ResourceManager`] or indirectly through the [`load`] method on
+/// [`Assets`]. The backing resource of type `T` can be accessed through the
+/// [`get`] method on [`ResourceManager`].
+///
+/// An `Option<ResourceHandle<T>>` is guaranteed to be the same size as a bare
+/// `ResourceHandle<T>`.
+///
+/// [`allocate`]: ResourceManager::allocate
+/// [`load`]: Assets::load
+/// [`get`]: ResourceManager::get
 pub struct ResourceHandle<T: 'static> {
     idx: NonZeroUsize,
     _marker: PhantomData<*const T>,
@@ -56,6 +109,16 @@ fn transmute_handle<T, U>(handle: ResourceHandle<T>) -> ResourceHandle<U> {
     }
 }
 
+/// A reference to a resource of type `T`.
+///
+/// **Do not** hold on to a `ResourceRef`, as attempting to allocate new
+/// [`ResourceHandle`]s or set previous ones while a `ResourceRef` is held will
+/// currently result in a panic. Instead, you should hold onto the
+/// [`ResourceHandle`] and reborrow the underlying data each time you need it.
+///
+/// See the [module-level documentation] for more information.
+///
+/// [module-level documentation]: self
 pub struct ResourceRef<'a, T> {
     inner: Ref<'a, T>,
 }
@@ -75,6 +138,16 @@ impl ResourceManager {
         }
     }
 
+    /// Allocates and returns a new [`ResourceHandle`] for the given type.
+    ///
+    /// # Panics
+    ///
+    /// Calling this function while holding on to a [`ResourceRef`], regardless
+    /// of what resource it points to, will result in a panic.
+    ///
+    /// See the [module-level documentation] for more information.
+    ///
+    /// [module-level documentation]: self
     #[must_use]
     pub fn allocate<T>(&self) -> ResourceHandle<T> {
         let type_id = TypeId::of::<T>();
@@ -96,6 +169,16 @@ impl ResourceManager {
         }
     }
 
+    /// Sets the underlying value of the given [`ResourceHandle`].
+    ///
+    /// # Panics
+    ///
+    /// Calling this function while holding on to a [`ResourceRef`], regardless
+    /// of what resource it points to, will result in a panic.
+    ///
+    /// See the [module-level documentation] for more information.
+    ///
+    /// [module-level documentation]: self
     pub fn set<T>(&self, handle: ResourceHandle<T>, data: T) {
         let type_id = TypeId::of::<T>();
         let mut storage = self.storage.borrow_mut();
@@ -109,6 +192,15 @@ impl ResourceManager {
         }
     }
 
+    /// Returns a reference to the underlying value of the given
+    /// [`ResourceHandle`].
+    ///
+    /// You should call this function again every time you need to access the
+    /// data instead of keeping around the returned reference.
+    ///
+    /// See the [module-level documentation] for more information.
+    ///
+    /// [module-level documentation]: self
     pub fn get<T>(&self, handle: ResourceHandle<T>) -> Option<ResourceRef<T>> {
         let type_id = TypeId::of::<T>();
         let inner = Ref::map(self.storage.borrow(), |e| {
@@ -127,6 +219,8 @@ impl ResourceManager {
     }
 }
 
+/// Abstraction for loading assets. Accessible from [`App`](crate::App) by
+/// default.
 pub struct Assets {
     resource_manager: ResourceManager,
     loaders: HashMap<(TypeId, Cow<'static, str>), Box<dyn Any>>,
@@ -142,6 +236,13 @@ impl Assets {
         }
     }
 
+    /// Registers a loader for the given type.
+    ///
+    /// # Arguments
+    ///
+    /// * `extension` - The file extension to apply the loader to.
+    /// * `loader` - A closure that takes a byte slice and returns a value of
+    ///   type `T`.
     pub fn add_loader<T: 'static>(
         &mut self,
         extension: impl Into<Cow<'static, str>>,
@@ -153,6 +254,19 @@ impl Assets {
         );
     }
 
+    /// Returns a [`ResourceHandle`] of the given type representing the asset at
+    /// the given path. The loader is only called and a new [`ResourceHandle`]
+    /// allocated if the asset has not already been loaded. Otherwise, a copy of
+    /// the existing handle is returned.
+    ///
+    /// Assets are not guaranteed to have been loaded by the time this function
+    /// returns, so you should gracefully handle cases where the asset is not
+    /// loaded yet.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no asset exists at the given path, the asset cannot be loaded
+    /// successfully, or no loader matches the given file extension and type.
     pub fn load<T: 'static>(&mut self, path: impl Into<Cow<'static, str>>) -> ResourceHandle<T> {
         use std::fs::read;
         use std::path::Path;

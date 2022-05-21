@@ -7,7 +7,8 @@ impl Drop for AbortOnDrop {
 }
 
 pub fn replace_with<T, F: FnOnce(T) -> T>(dest: &mut T, f: F) {
-    // SAFETY: We abort if `f` panics, so we're guaranteed to end up with a valid value.
+    // SAFETY: We abort if `f` panics, so we're guaranteed to end up with a valid
+    // value.
     unsafe {
         let old = std::ptr::read(dest);
         let abort = AbortOnDrop;
