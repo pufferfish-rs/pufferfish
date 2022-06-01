@@ -299,6 +299,50 @@ impl Graphics {
         }
     }
 
+    /// Draws a part of a sprite at the given position.
+    pub fn draw_sprite_part(
+        &mut self,
+        x: f32,
+        y: f32,
+        sx: f32,
+        sy: f32,
+        sw: f32,
+        sh: f32,
+        sprite: ResourceHandle<Sprite>,
+    ) {
+        if let Some(s) = self.resource_manager.get(sprite) {
+            let Sprite { width, height, .. } = *s;
+            let w = width as f32;
+            let h = height as f32;
+            self.draw_commands.push(DrawCommand {
+                sprite: Some(sprite),
+                verts: vec![
+                    Vertex {
+                        pos: (x, y),
+                        color: self.color,
+                        uv: (sx / w, sy / h),
+                    },
+                    Vertex {
+                        pos: (x + sw, y),
+                        color: self.color,
+                        uv: (sx / w + sw / w, sy / h),
+                    },
+                    Vertex {
+                        pos: (x + sw, y + sh),
+                        color: self.color,
+                        uv: (sx / w + sw / w, sy / h + sh / h),
+                    },
+                    Vertex {
+                        pos: (x, y + sh),
+                        color: self.color,
+                        uv: (sx / w, sy / h + sh / h),
+                    },
+                ],
+                indices: vec![0, 3, 1, 1, 3, 2],
+            });
+        }
+    }
+
     /// Draws a sprite at the given position with the given dimensions.
     pub fn draw_sprite_scaled(
         &mut self,
@@ -336,6 +380,51 @@ impl Graphics {
         });
     }
 
+    /// Draw a part of a sprite at the given position with the given dimensions.
+    pub fn draw_sprite_scaled_part(
+        &mut self,
+        dx: f32,
+        dy: f32,
+        dw: f32,
+        dh: f32,
+        sx: f32,
+        sy: f32,
+        sw: f32,
+        sh: f32,
+        sprite: ResourceHandle<Sprite>,
+    ) {
+        if let Some(s) = self.resource_manager.get(sprite) {
+            let Sprite { width, height, .. } = *s;
+            let w = width as f32;
+            let h = height as f32;
+            self.draw_commands.push(DrawCommand {
+                sprite: Some(sprite),
+                verts: vec![
+                    Vertex {
+                        pos: (dx, dy),
+                        color: self.color,
+                        uv: (sx / w, sy / h),
+                    },
+                    Vertex {
+                        pos: (dx + dw, dy),
+                        color: self.color,
+                        uv: (sx / w + sw / w, sy / h),
+                    },
+                    Vertex {
+                        pos: (dx + dw, dy + dh),
+                        color: self.color,
+                        uv: (sx / w + sw / w, sy / h + sh / h),
+                    },
+                    Vertex {
+                        pos: (dx, dy + dh),
+                        color: self.color,
+                        uv: (sx / w, sy / h + sh / h),
+                    },
+                ],
+                indices: vec![0, 3, 1, 1, 3, 2],
+            });
+        }
+    }
     /// Ends drawing and commits everything to the screen.
     pub fn end(&mut self) {
         if self.draw_commands.is_empty() {
