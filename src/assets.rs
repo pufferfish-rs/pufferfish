@@ -28,11 +28,11 @@
 use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::cell::{Ref, RefCell};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::marker::PhantomData;
-use std::num::NonZeroUsize;
+use std::num::NonZeroU64;
 use std::ops::Deref;
 use std::rc::Rc;
 
@@ -51,7 +51,7 @@ use std::rc::Rc;
 /// [module-level documentation]: self
 #[derive(Clone)]
 pub struct ResourceManager {
-    storage: Rc<RefCell<HashMap<TypeId, Box<dyn Any>>>>,
+    storage: Rc<RefCell<BTreeMap<(TypeId, u64), Box<dyn Any>>>>,
 }
 
 /// A handle to a resource of type `T`.
@@ -68,7 +68,7 @@ pub struct ResourceManager {
 /// [`load`]: Assets::load
 /// [`get`]: ResourceManager::get
 pub struct ResourceHandle<T: 'static> {
-    idx: NonZeroUsize,
+    idx: NonZeroU64,
     _marker: PhantomData<*const T>,
 }
 
@@ -134,7 +134,7 @@ impl<T> Deref for ResourceRef<'_, T> {
 impl ResourceManager {
     pub(crate) fn new() -> Self {
         Self {
-            storage: Rc::new(RefCell::new(HashMap::new())),
+            storage: Rc::new(RefCell::new(BTreeMap::new())),
         }
     }
 
@@ -152,20 +152,20 @@ impl ResourceManager {
     pub fn allocate<T>(&self) -> ResourceHandle<T> {
         let type_id = TypeId::of::<T>();
         let mut storage = self.storage.borrow_mut();
-        unsafe {
-            // SAFETY: We know that the type is correct.
-            let vec = storage
-                .entry(type_id)
-                .or_insert_with(|| Box::new(Vec::<Option<T>>::with_capacity(1)))
-                .downcast_mut::<Vec<Option<T>>>()
-                .unwrap_unchecked();
-            vec.push(None);
 
-            // SAFETY: We just pushed an element to the Vec.
-            ResourceHandle {
-                idx: NonZeroUsize::new_unchecked(vec.len()),
-                _marker: PhantomData,
-            }
+        // Find the greatest index and add 1 (or use 1 if there is no index).
+        let idx = storage
+            .keys()
+            .rfind(|k| k.0 == type_id)
+            .map(|e| e.1 + 1)
+            .unwrap_or(1);
+
+        storage.insert((type_id, idx), Box::<Option<T>>::new(None));
+
+        // SAFETY: idx cannot be zero.
+        ResourceHandle {
+            idx: unsafe { NonZeroU64::new_unchecked(idx) },
+            _marker: PhantomData,
         }
     }
 
@@ -184,11 +184,11 @@ impl ResourceManager {
         let mut storage = self.storage.borrow_mut();
         unsafe {
             // SAFETY: We know everything exists and the type is correct.
-            let vec = storage
-                .get_mut(&type_id)
-                .and_then(|e| e.downcast_mut::<Vec<Option<T>>>())
+            let val = storage
+                .get_mut(&(type_id, handle.idx.get()))
+                .and_then(|e| e.downcast_mut::<Option<T>>())
                 .unwrap_unchecked();
-            vec[handle.idx.get() - 1] = Some(data);
+            *val = Some(data);
         }
     }
 
@@ -204,9 +204,8 @@ impl ResourceManager {
     pub fn get<T>(&self, handle: ResourceHandle<T>) -> Option<ResourceRef<T>> {
         let type_id = TypeId::of::<T>();
         let inner = Ref::map(self.storage.borrow(), |e| {
-            e.get(&type_id)
-                .and_then(|e| e.downcast_ref::<Vec<Option<T>>>())
-                .and_then(|e| e.get(handle.idx.get() - 1))
+            e.get(&(type_id, handle.idx.get()))
+                .and_then(|e| e.downcast_ref::<Option<T>>())
                 .unwrap()
         });
         if inner.is_none() {
