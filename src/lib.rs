@@ -69,5 +69,6 @@ pub use app::*;
 pub mod assets;
 pub mod graphics;
 pub mod input;
+pub mod text;
 
 mod util;

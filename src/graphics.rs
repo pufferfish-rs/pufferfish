@@ -9,6 +9,7 @@ use fugu::{
 };
 
 use crate::assets::{ResourceHandle, ResourceManager};
+use crate::text::Font;
 
 mod shader {
     pub const VERT: &str = r"
@@ -108,6 +109,21 @@ impl Sprite {
             height,
         }
     }
+
+    /// Returns the sprite's underlying [`Image`].
+    pub fn inner(&self) -> &Image {
+        &self.image
+    }
+
+    /// Returns the width of the sprite.
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// Returns the height of the sprite.
+    pub fn height(&self) -> u32 {
+        self.height
+    }
 }
 
 #[repr(C)]
@@ -136,7 +152,7 @@ struct DrawBatch {
 pub struct Graphics {
     /// An [`Rc`] of the underlying [`Context`].
     pub ctx: Rc<Context>,
-    resource_manager: ResourceManager,
+    pub(crate) resource_manager: ResourceManager,
     pipeline: Pipeline,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
@@ -426,6 +442,12 @@ impl Graphics {
             });
         }
     }
+
+    /// Draws the given text at the given position.
+    pub fn draw_text(&mut self, x: f32, y: f32, text: &str, font: ResourceHandle<Font>, size: f32) {
+        crate::text::draw_text(self, x, y, text, font, size);
+    }
+
     /// Ends drawing and commits everything to the screen.
     pub fn end(&mut self) {
         if self.draw_commands.is_empty() {

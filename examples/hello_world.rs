@@ -50,5 +50,12 @@ fn draw(state: &State, g: &mut Graphics, assets: &mut Assets) {
         state.player.y - 16.,
         assets.load("examples/player.png"),
     );
+    g.draw_text(
+        10.,
+        10.,
+        "Hello, world!",
+        assets.load("examples/monogram.ttf"),
+        32.,
+    );
     g.end();
 }

@@ -9,6 +9,7 @@ use fugu::Context;
 use crate::assets::{Assets, ResourceManager};
 use crate::graphics::{Graphics, Sprite};
 use crate::input::Input;
+use crate::text::Font;
 use crate::util::{replace_with, type_name};
 
 mod sdl;
@@ -323,6 +324,9 @@ impl App {
                 )
             });
         }
+
+        assets.add_loader("ttf", |bytes| Font::new(bytes));
+        assets.add_loader("otf", |bytes| Font::new(bytes));
 
         self.state.insert(assets);
 

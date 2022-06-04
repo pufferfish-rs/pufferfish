@@ -8,7 +8,9 @@ repository = "https://github.com/pufferfish-rs/pufferfish/"
 license = "Zlib OR MIT OR Apache-2.0"
 
 [dependencies]
-fugu = { git = "https://github.com/pufferfish-rs/fugu", rev = "2caedeb" }
+etagere = "0.2.7"
+fontdue = "0.7.2"
+fugu = { git = "https://github.com/pufferfish-rs/fugu", rev = "92098f6" }
 png-decoder = { version = "0.1.0", optional = true }
 sdl2 = { version = "0.35.2", features = ["bundled"] }
 
