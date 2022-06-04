@@ -9,6 +9,7 @@ use fugu::{
 };
 
 use crate::assets::{ResourceHandle, ResourceManager};
+#[cfg(feature = "text")]
 use crate::text::Font;
 
 mod shader {
@@ -444,6 +445,7 @@ impl Graphics {
     }
 
     /// Draws the given text at the given position.
+    #[cfg(feature = "text")]
     pub fn draw_text(&mut self, x: f32, y: f32, text: &str, font: ResourceHandle<Font>, size: f32) {
         crate::text::draw_text(self, x, y, text, font, size);
     }
