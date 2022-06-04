@@ -53,7 +53,7 @@ fn draw(state: &State, g: &mut Graphics, assets: &mut Assets) {
     g.draw_text(
         10.,
         10.,
-        "Hello, world!",
+        "Hello, world!\nThis is a pufferfish example.",
         assets.load("examples/monogram.ttf"),
         32.,
     );
