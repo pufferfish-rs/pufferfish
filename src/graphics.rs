@@ -146,6 +146,7 @@ pub struct Graphics {
     color: Color,
 }
 
+#[allow(clippy::too_many_arguments)]
 impl Graphics {
     pub(crate) fn new(ctx: &Rc<Context>, resource_manager: &ResourceManager) -> Graphics {
         ctx.set_blend(BlendState {

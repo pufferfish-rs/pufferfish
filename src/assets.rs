@@ -146,6 +146,7 @@ impl Resource {
         &(*inner).data
     }
 
+    #[allow(clippy::mut_from_ref)]
     unsafe fn downcast_mut<T>(&self) -> &mut T {
         let inner = self.0.get() as *mut ResourceInner<T>;
         &mut (*inner).data

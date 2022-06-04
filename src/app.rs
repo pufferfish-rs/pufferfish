@@ -54,6 +54,7 @@ impl<T: 'static> Argable for &mut T {
 }
 
 /// A heterogeneous collection that can store one value of each type.
+#[derive(Default)]
 pub struct TypeMap {
     inner: HashMap<TypeId, NonNull<dyn Any>>,
 }
@@ -64,9 +65,7 @@ impl TypeMap {
     /// The type map is initially created with a capacity of 0, so it will not
     /// allocate until it is first inserted into.
     pub fn new() -> Self {
-        Self {
-            inner: HashMap::new(),
-        }
+        Default::default()
     }
 
     /// Inserts a value of type `T` into the type map, replacing the previous
