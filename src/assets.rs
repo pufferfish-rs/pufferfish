@@ -5,13 +5,11 @@
 //! types.
 //!
 //! The underlying resources can be accessed through the [`get`] method on
-//! [`ResourceManager`]. However, currently, the returned [`ResourceRef`]
-//! borrows the entire storage. This means that as long as a [`ResourceRef`] is
-//! alive, calling [`ResourceManager::allocate`] or calling
-//! [`ResourceManager::set`] on any resource handle will result in a runtime
-//! panic.
+//! [`ResourceManager`]. The returned [`ResourceRef`] uniquely borrows the
+//! underlying resource. This means that calling [`get`] while already holding
+//! on to a [`ResourceRef`] to the same resource will result in a runtime panic.
 //!
-//! Therefore, the [`ResourceRef`] **should not** be held on to for
+//! Therefore, the [`ResourceRef`] *should not* be held on to for
 //! longer than necessary. The [`ResourceHandle`] should be kept around instead,
 //! and the [`ResourceRef`] should be reacquired each time it is needed.
 //!
@@ -27,13 +25,13 @@
 
 use std::any::{Any, TypeId};
 use std::borrow::Cow;
-use std::cell::{Ref, RefCell};
+use std::cell::{RefCell, UnsafeCell};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::num::NonZeroU64;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
 /// Central storage of resources used in the game. Accessible from
@@ -51,7 +49,7 @@ use std::rc::Rc;
 /// [module-level documentation]: self
 #[derive(Clone)]
 pub struct ResourceManager {
-    storage: Rc<RefCell<BTreeMap<(TypeId, u64), Box<dyn Any>>>>,
+    storage: Rc<RefCell<BTreeMap<(TypeId, u64), Resource>>>,
 }
 
 /// A handle to a resource of type `T`.
@@ -109,25 +107,104 @@ fn transmute_handle<T, U>(handle: ResourceHandle<T>) -> ResourceHandle<U> {
     }
 }
 
+#[derive(Clone)]
+struct Resource(Rc<UnsafeCell<dyn Any>>);
+
+#[repr(C)]
+struct ResourceInner<T> {
+    lock: bool,
+    data: T,
+}
+
+impl Resource {
+    fn new<T: 'static>(data: T) -> Self {
+        Resource(Rc::new(UnsafeCell::new(ResourceInner {
+            lock: false,
+            data,
+        })))
+    }
+
+    fn lock(&self) {
+        unsafe {
+            let inner = self.0.get() as *mut bool;
+            if *inner {
+                panic!("cannot acquire lock to resource that is already locked");
+            }
+            *inner = true;
+        }
+    }
+
+    fn unlock(&self) {
+        unsafe {
+            let inner = self.0.get() as *mut bool;
+            *inner = false;
+        }
+    }
+
+    unsafe fn downcast_ref<T>(&self) -> &T {
+        let inner = self.0.get() as *const dyn Any as *const ResourceInner<T>;
+        &(*inner).data
+    }
+
+    unsafe fn downcast_mut<T>(&self) -> &mut T {
+        let inner = self.0.get() as *mut ResourceInner<T>;
+        &mut (*inner).data
+    }
+}
+
 /// A reference to a resource of type `T`.
 ///
-/// **Do not** hold on to a `ResourceRef`, as attempting to allocate new
-/// [`ResourceHandle`]s or set previous ones while a `ResourceRef` is held will
-/// currently result in a panic. Instead, you should hold onto the
-/// [`ResourceHandle`] and reborrow the underlying data each time you need it.
+/// Generally speaking, *do not* hold on to a `ResourceRef` for longer than
+/// necessary, as attempting to acquire a new `ResourceRef` while already
+/// holding one to the same resource will result in a panic. Instead, you should
+/// hold on to the [`ResourceHandle`] and reacquire the `ResourceRef` each time
+/// you need it.
 ///
 /// See the [module-level documentation] for more information.
 ///
 /// [module-level documentation]: self
-pub struct ResourceRef<'a, T> {
-    inner: Ref<'a, T>,
+pub struct ResourceRef<T> {
+    inner: Resource,
+    _marker: PhantomData<T>,
 }
 
-impl<T> Deref for ResourceRef<'_, T> {
+impl<T> ResourceRef<T> {
+    fn new(inner: Resource) -> Self {
+        inner.lock();
+        Self {
+            inner,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T> Deref for ResourceRef<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner
+        unsafe {
+            self.inner
+                .downcast_ref::<Option<T>>()
+                .as_ref()
+                .unwrap_unchecked()
+        }
+    }
+}
+
+impl<T> DerefMut for ResourceRef<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe {
+            self.inner
+                .downcast_mut::<Option<T>>()
+                .as_mut()
+                .unwrap_unchecked()
+        }
+    }
+}
+
+impl<T> Drop for ResourceRef<T> {
+    fn drop(&mut self) {
+        self.inner.unlock();
     }
 }
 
@@ -139,11 +216,6 @@ impl ResourceManager {
     }
 
     /// Allocates and returns a new [`ResourceHandle`] for the given type.
-    ///
-    /// # Panics
-    ///
-    /// Calling this function while holding on to a [`ResourceRef`], regardless
-    /// of what resource it points to, will result in a panic.
     ///
     /// See the [module-level documentation] for more information.
     ///
@@ -160,7 +232,7 @@ impl ResourceManager {
             .map(|e| e.1 + 1)
             .unwrap_or(1);
 
-        storage.insert((type_id, idx), Box::<Option<T>>::new(None));
+        storage.insert((type_id, idx), Resource::new::<Option<T>>(None));
 
         // SAFETY: idx cannot be zero.
         ResourceHandle {
@@ -170,11 +242,6 @@ impl ResourceManager {
     }
 
     /// Sets the underlying value of the given [`ResourceHandle`].
-    ///
-    /// # Panics
-    ///
-    /// Calling this function while holding on to a [`ResourceRef`], regardless
-    /// of what resource it points to, will result in a panic.
     ///
     /// See the [module-level documentation] for more information.
     ///
@@ -186,8 +253,8 @@ impl ResourceManager {
             // SAFETY: We know everything exists and the type is correct.
             let val = storage
                 .get_mut(&(type_id, handle.idx.get()))
-                .and_then(|e| e.downcast_mut::<Option<T>>())
-                .unwrap_unchecked();
+                .unwrap_unchecked()
+                .downcast_mut::<Option<T>>();
             *val = Some(data);
         }
     }
@@ -195,25 +262,29 @@ impl ResourceManager {
     /// Returns a reference to the underlying value of the given
     /// [`ResourceHandle`].
     ///
-    /// You should call this function again every time you need to access the
-    /// data instead of keeping around the returned reference.
+    /// Generally speaking, you should call this function again every time you
+    /// need to access the data instead of keeping around the returned
+    /// guard.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is already a [`ResourceRef`] to the same resource.
     ///
     /// See the [module-level documentation] for more information.
     ///
     /// [module-level documentation]: self
     pub fn get<T>(&self, handle: ResourceHandle<T>) -> Option<ResourceRef<T>> {
         let type_id = TypeId::of::<T>();
-        let inner = Ref::map(self.storage.borrow(), |e| {
-            e.get(&(type_id, handle.idx.get()))
-                .and_then(|e| e.downcast_ref::<Option<T>>())
-                .unwrap()
-        });
-        if inner.is_none() {
-            None
-        } else {
-            Some(ResourceRef {
-                inner: Ref::map(inner, |e| e.as_ref().unwrap()),
-            })
+        unsafe {
+            let mut inner = self.storage.borrow_mut();
+            let inner = inner
+                .get_mut(&(type_id, handle.idx.get()))
+                .unwrap_unchecked();
+            if inner.downcast_ref::<Option<T>>().is_none() {
+                None
+            } else {
+                Some(ResourceRef::new(inner.clone()))
+            }
         }
     }
 }
