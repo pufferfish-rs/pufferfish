@@ -18,6 +18,7 @@ pub struct Font {
     sprites: Vec<ResourceHandle<Sprite>>,
     allocators: Vec<AtlasAllocator>,
     glyphs: HashMap<GlyphRasterConfig, Option<(usize, AllocId)>>,
+    draw_commands: Vec<DrawCommand>,
 }
 
 impl Font {
@@ -29,8 +30,19 @@ impl Font {
             sprites: Vec::new(),
             allocators: Vec::new(),
             glyphs: HashMap::new(),
+            draw_commands: Vec::new(),
         }
     }
+}
+
+struct DrawCommand {
+    x: f32,
+    y: f32,
+    sx: f32,
+    sy: f32,
+    sw: f32,
+    sh: f32,
+    sprite: usize,
 }
 
 pub(crate) fn draw_text(
@@ -48,15 +60,44 @@ pub(crate) fn draw_text(
             sprites,
             allocators,
             glyphs,
+            draw_commands,
         } = &mut *font;
+
         layout.reset(&LayoutSettings {
             x,
             y,
             ..Default::default()
         });
         layout.append(std::slice::from_ref(inner), &TextStyle::new(text, size, 0));
+
+        draw_commands.clear();
         for glyph in layout.glyphs() {
-            draw_char(g, glyph, inner, sprites, allocators, glyphs, size);
+            draw_char(
+                g,
+                glyph,
+                inner,
+                sprites,
+                allocators,
+                glyphs,
+                draw_commands,
+                size,
+            );
+        }
+
+        if sprites.len() > 1 {
+            draw_commands.sort_unstable_by(|a, b| usize::cmp(&a.sprite, &b.sprite));
+        }
+
+        for cmd in draw_commands {
+            g.draw_sprite_part(
+                cmd.x,
+                cmd.y,
+                cmd.sx,
+                cmd.sy,
+                cmd.sw,
+                cmd.sh,
+                sprites[cmd.sprite],
+            );
         }
     }
 }
@@ -68,6 +109,7 @@ fn draw_char(
     sprites: &mut Vec<ResourceHandle<Sprite>>,
     allocators: &mut Vec<AtlasAllocator>,
     glyphs: &mut HashMap<GlyphRasterConfig, Option<(usize, AllocId)>>,
+    draw_commands: &mut Vec<DrawCommand>,
     size: f32,
 ) {
     fn push_atlas(
@@ -108,6 +150,7 @@ fn draw_char(
         } else if metrics.width > ATLAS_SIZE as _ || metrics.height > ATLAS_SIZE as _ {
             panic!("glyph bigger than atlas");
         } else {
+            // TODO: be smarter about choosing the atlas instead of just using the last one
             let alloc = allocators[i]
                 .allocate(Size2D::new(metrics.width as _, metrics.height as _))
                 .unwrap_or_else(|| {
@@ -137,15 +180,14 @@ fn draw_char(
     });
     if let &mut Some((i, id)) = entry {
         let rect = allocators[i].get(id);
-        // TODO: sort by atlas index to reduce drawcalls
-        g.draw_sprite_part(
-            glyph.x,
-            glyph.y,
-            rect.min.x as f32,
-            rect.min.y as f32,
-            rect.size().width as f32,
-            rect.size().height as f32,
-            sprites[i],
-        );
+        draw_commands.push(DrawCommand {
+            x: glyph.x,
+            y: glyph.y,
+            sx: rect.min.x as _,
+            sy: rect.min.y as _,
+            sw: rect.size().width as _,
+            sh: rect.size().height as _,
+            sprite: i,
+        });
     }
 }
