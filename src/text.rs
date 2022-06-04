@@ -140,7 +140,6 @@ fn draw_char(
 
     let entry = glyphs.entry(glyph.key).or_insert_with(|| {
         let c = glyph.parent;
-        let mut i = sprites.len() - 1;
         let (metrics, data) = glyph
             .char_data
             .rasterize()
@@ -150,15 +149,21 @@ fn draw_char(
         } else if metrics.width > ATLAS_SIZE as _ || metrics.height > ATLAS_SIZE as _ {
             panic!("glyph bigger than atlas");
         } else {
-            // TODO: be smarter about choosing the atlas instead of just using the last one
-            let alloc = allocators[i]
-                .allocate(Size2D::new(metrics.width as _, metrics.height as _))
+            // TODO: maybe use a heuristic to optimize choosing which atlas to use
+            let (i, alloc) = allocators
+                .iter_mut()
+                .enumerate()
+                .find_map(|(i, e)| {
+                    e.allocate(Size2D::new(metrics.width as _, metrics.height as _))
+                        .map(|alloc| (i, alloc))
+                })
                 .unwrap_or_else(|| {
+                    let i = allocators.len();
                     push_atlas(g, sprites, allocators);
-                    i += 1;
-                    allocators[i]
+                    let alloc = allocators[i]
                         .allocate(Size2D::new(metrics.width as _, metrics.height as _))
-                        .unwrap()
+                        .unwrap();
+                    (i, alloc)
                 });
             let data = data
                 .into_iter()
