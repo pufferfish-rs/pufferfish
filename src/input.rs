@@ -3,6 +3,7 @@
 /// Symbolic names for virtual key codes.
 #[repr(u8)]
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
+#[non_exhaustive]
 #[allow(missing_docs)]
 pub enum KeyCode {
     A,

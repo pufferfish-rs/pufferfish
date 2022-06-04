@@ -3,6 +3,7 @@ name = "pufferfish"
 version = "0.1.0"
 authors = ["lunabunn <iamrabbitmoon@gmail.com>"]
 edition = "2021"
+rust-version = "1.60"
 description = "An opinionated 2D game library"
 repository = "https://github.com/pufferfish-rs/pufferfish/"
 license = "Zlib OR MIT OR Apache-2.0"
