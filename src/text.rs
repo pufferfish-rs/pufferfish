@@ -13,8 +13,12 @@ const ATLAS_SIZE: u32 = 2048;
 
 /// A TrueType/OpenType font, owning an immutable copy of the font data.
 pub struct Font {
-    inner: fontdue::Font,
     layout: Layout,
+    inner: FontInner,
+}
+
+struct FontInner {
+    font: fontdue::Font,
     sprites: Vec<ResourceHandle<Sprite>>,
     allocators: Vec<AtlasAllocator>,
     glyphs: HashMap<GlyphRasterConfig, Option<(usize, AllocId)>>,
@@ -25,12 +29,14 @@ impl Font {
     /// Creates a new font from the given data.
     pub fn new(data: impl AsRef<[u8]>) -> Self {
         Self {
-            inner: fontdue::Font::from_bytes(data.as_ref(), Default::default()).unwrap(),
             layout: Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown),
-            sprites: Vec::new(),
-            allocators: Vec::new(),
-            glyphs: HashMap::new(),
-            draw_commands: Vec::new(),
+            inner: FontInner {
+                font: fontdue::Font::from_bytes(data.as_ref(), Default::default()).unwrap(),
+                sprites: Vec::new(),
+                allocators: Vec::new(),
+                glyphs: HashMap::new(),
+                draw_commands: Vec::new(),
+            },
         }
     }
 }
@@ -54,41 +60,30 @@ pub(crate) fn draw_text(
     size: f32,
 ) {
     if let Some(mut font) = g.resource_manager.get(font) {
-        let Font {
-            layout,
-            inner,
-            sprites,
-            allocators,
-            glyphs,
-            draw_commands,
-        } = &mut *font;
+        let Font { layout, inner } = &mut *font;
 
         layout.reset(&LayoutSettings {
             x,
             y,
             ..Default::default()
         });
-        layout.append(std::slice::from_ref(inner), &TextStyle::new(text, size, 0));
+        layout.append(
+            std::slice::from_ref(&inner.font),
+            &TextStyle::new(text, size, 0),
+        );
 
-        draw_commands.clear();
+        inner.draw_commands.clear();
         for glyph in layout.glyphs() {
-            draw_char(
-                g,
-                glyph,
-                inner,
-                sprites,
-                allocators,
-                glyphs,
-                draw_commands,
-                size,
-            );
+            draw_char(g, glyph, inner, size);
         }
 
-        if sprites.len() > 1 {
-            draw_commands.sort_unstable_by(|a, b| usize::cmp(&a.sprite, &b.sprite));
+        if inner.sprites.len() > 1 {
+            inner
+                .draw_commands
+                .sort_unstable_by(|a, b| usize::cmp(&a.sprite, &b.sprite));
         }
 
-        for cmd in draw_commands {
+        for cmd in &inner.draw_commands {
             g.draw_sprite_part(
                 cmd.x,
                 cmd.y,
@@ -96,7 +91,7 @@ pub(crate) fn draw_text(
                 cmd.sy,
                 cmd.sw,
                 cmd.sh,
-                sprites[cmd.sprite],
+                inner.sprites[cmd.sprite],
             );
         }
     }
@@ -105,11 +100,13 @@ pub(crate) fn draw_text(
 fn draw_char(
     g: &mut Graphics,
     glyph: &GlyphPosition,
-    inner: &mut fontdue::Font,
-    sprites: &mut Vec<ResourceHandle<Sprite>>,
-    allocators: &mut Vec<AtlasAllocator>,
-    glyphs: &mut HashMap<GlyphRasterConfig, Option<(usize, AllocId)>>,
-    draw_commands: &mut Vec<DrawCommand>,
+    FontInner {
+        font,
+        sprites,
+        allocators,
+        glyphs,
+        draw_commands,
+    }: &mut FontInner,
     size: f32,
 ) {
     fn push_atlas(
@@ -144,8 +141,11 @@ fn draw_char(
     let entry = glyphs.entry(glyph.key).or_insert_with(|| {
         let c = glyph.parent;
         let mut i = sprites.len() - 1;
-        let (metrics, data) = inner.rasterize(c, size);
-        if !glyph.char_data.rasterize() || metrics.width == 0 || metrics.height == 0 {
+        let (metrics, data) = glyph
+            .char_data
+            .rasterize()
+            .then(|| font.rasterize(c, size))?;
+        if metrics.width == 0 || metrics.height == 0 {
             None
         } else if metrics.width > ATLAS_SIZE as _ || metrics.height > ATLAS_SIZE as _ {
             panic!("glyph bigger than atlas");
