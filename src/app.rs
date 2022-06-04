@@ -310,7 +310,7 @@ impl App {
         #[cfg(feature = "png-decoder")]
         {
             let ctx = ctx.clone();
-            assets.add_loader("png", move |bytes| {
+            assets.add_loader(["png"], move |bytes| {
                 let (meta, data) = png_decoder::decode(bytes).unwrap();
                 Sprite::new(
                     &ctx,
@@ -328,8 +328,7 @@ impl App {
         {
             use crate::text::Font;
 
-            assets.add_loader("ttf", |bytes| Font::new(bytes));
-            assets.add_loader("otf", |bytes| Font::new(bytes));
+            assets.add_loader(["ttf", "otf"], |bytes| Font::new(bytes));
         }
 
         self.state.insert(assets);

@@ -294,7 +294,7 @@ impl ResourceManager {
 /// default.
 pub struct Assets {
     resource_manager: ResourceManager,
-    loaders: HashMap<(TypeId, Cow<'static, str>), Box<dyn Any>>,
+    loaders: HashMap<(TypeId, Cow<'static, str>), Rc<dyn Any>>,
     handles: HashMap<(TypeId, Cow<'static, str>), ResourceHandle<()>>,
 }
 
@@ -311,18 +311,19 @@ impl Assets {
     ///
     /// # Arguments
     ///
-    /// * `extension` - The file extension to apply the loader to.
+    /// * `extensions` - An array of file extensions to apply the loader to.
     /// * `loader` - A closure that takes a byte slice and returns a value of
     ///   type `T`.
-    pub fn add_loader<T: 'static>(
+    pub fn add_loader<T: 'static, const LEN: usize>(
         &mut self,
-        extension: impl Into<Cow<'static, str>>,
+        extensions: [impl Into<Cow<'static, str>>; LEN],
         loader: impl Fn(&[u8]) -> T + 'static,
     ) {
-        self.loaders.insert(
-            (TypeId::of::<T>(), extension.into()),
-            Box::<Box<dyn Fn(&[u8]) -> T>>::new(Box::new(loader)),
-        );
+        let loader: Rc<dyn Any> = Rc::<Box<dyn Fn(&[u8]) -> T>>::new(Box::new(loader));
+        for extension in extensions {
+            self.loaders
+                .insert((TypeId::of::<T>(), extension.into()), Rc::clone(&loader));
+        }
     }
 
     /// Returns a [`ResourceHandle`] of the given type representing the asset at
