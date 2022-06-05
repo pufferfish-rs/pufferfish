@@ -14,7 +14,7 @@ use crate::text::Font;
 
 mod color;
 pub use color::Color;
-mod commands;
+pub mod commands;
 use commands::*;
 
 mod shader {
@@ -237,13 +237,22 @@ impl Graphics {
     }
 
     /// Gets the default font, loading it if it hasn't been loaded already.
+    #[cfg(feature = "text")]
     pub fn default_font(&mut self) -> ResourceHandle<Font> {
         *self.default_font.get_or_insert_with(|| {
             let font = self.resource_manager.allocate();
             self.resource_manager
-                .set(font, Font::new(include_bytes!("graphics/monogram.ttf")));
+                .set(font, Font::new(include_bytes!("graphics/monogram.otf")));
             font
         })
+    }
+
+    /// Overrides the default font returned by [`default_font`].
+    ///
+    /// [`default_font`]: Graphics::default_font
+    #[cfg(feature = "text")]
+    pub fn set_default_font(&mut self, font: ResourceHandle<Font>) {
+        self.default_font = Some(font);
     }
 
     /// Ends drawing and commits everything to the screen.

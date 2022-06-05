@@ -1,3 +1,5 @@
+//! Drawing commands.
+
 use super::{Color, Graphics, Sprite};
 use crate::assets::ResourceHandle;
 use crate::text::Font;
@@ -253,7 +255,7 @@ impl<'a> DrawText<'a> {
         let (x, y) = self.pos;
         let text = self.text;
         let font = self.font.unwrap_or_else(|| self.g.default_font());
-        let size = self.size.unwrap_or(32.);
+        let size = self.size.unwrap_or(24.);
         crate::text::draw_text(self.g, x, y, text, font, size);
     }
 }
