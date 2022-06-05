@@ -2,7 +2,7 @@
 
 # 🐡 pufferfish
 
-An opinionated 2D game library for Rust
+An opinionated 2D game framework for Rust
 
 [![Docs](https://docs.rs/pufferfish/badge.svg)](https://docs.rs/pufferfish)
 [![Crates.io](https://shields.io/crates/v/pufferfish)](https://crates.io/crates/pufferfish)
