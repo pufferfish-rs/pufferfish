@@ -127,6 +127,7 @@ pub struct Graphics {
     draw_commands: Vec<DrawCommand>,
     viewport: (f32, f32),
     color: Color,
+    depth: f32,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -182,6 +183,7 @@ impl Graphics {
         let draw_commands = Vec::new();
         let viewport = (0., 0.);
         let color = Color::WHITE;
+        let depth = 0.;
 
         Graphics {
             ctx: ctx.clone(),
@@ -194,6 +196,7 @@ impl Graphics {
             draw_commands,
             viewport,
             color,
+            depth,
         }
     }
 
@@ -218,6 +221,11 @@ impl Graphics {
     /// Sets the default color to use when drawing.
     pub fn set_color(&mut self, color: Color) {
         self.color = color;
+    }
+
+    /// Sets the default depth to use when drawing.
+    pub fn set_depth(&mut self, depth: f32) {
+        self.depth = depth;
     }
 
     /// Draws a rectangle at the given position with the given dimensions.
@@ -268,6 +276,10 @@ impl Graphics {
         self.ctx.set_index_buffer(&self.index_buffer);
         self.ctx.set_uniforms(self.viewport);
         self.ctx.set_images(&[&self.blank_image]);
+
+        self.draw_commands.sort_by(|a, b| {
+            f32::partial_cmp(&b.depth, &a.depth).unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let mut batches = Vec::new();
         let mut curr_sprite = self.draw_commands[0].sprite;

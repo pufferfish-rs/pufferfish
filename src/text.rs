@@ -51,6 +51,7 @@ struct DrawCommand {
     sprite: usize,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_text(
     g: &mut Graphics,
     x: f32,
@@ -59,6 +60,7 @@ pub(crate) fn draw_text(
     font: ResourceHandle<Font>,
     size: f32,
     color: Color,
+    depth: f32,
 ) {
     if let Some(mut font) = g.resource_manager.get(font) {
         let Font { layout, inner } = &mut *font;
@@ -87,7 +89,8 @@ pub(crate) fn draw_text(
         for cmd in &inner.draw_commands {
             g.draw_sprite(cmd.x, cmd.y, inner.sprites[cmd.sprite])
                 .source_rect(cmd.sx, cmd.sy, cmd.sw, cmd.sh)
-                .color(color);
+                .color(color)
+                .depth(depth);
         }
     }
 }

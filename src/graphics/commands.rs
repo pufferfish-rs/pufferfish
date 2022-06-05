@@ -16,6 +16,7 @@ pub(super) struct DrawCommand {
     pub sprite: Option<ResourceHandle<Sprite>>,
     pub verts: Vec<Vertex>,
     pub indices: Vec<u16>,
+    pub depth: f32,
 }
 
 /// A rectangle to be drawn.
@@ -32,6 +33,7 @@ pub struct DrawRect<'a> {
     pos: (f32, f32),
     size: (f32, f32),
     color: Option<Color>,
+    depth: Option<f32>,
 }
 
 impl<'a> DrawRect<'a> {
@@ -41,6 +43,7 @@ impl<'a> DrawRect<'a> {
             pos: (x, y),
             size: (w, h),
             color: None,
+            depth: None,
         }
     }
 
@@ -50,10 +53,17 @@ impl<'a> DrawRect<'a> {
         self
     }
 
+    /// Sets the depth of the rectangle.
+    pub fn depth(mut self, depth: f32) -> Self {
+        self.depth = Some(depth);
+        self
+    }
+
     fn commit(&mut self) {
         let (x, y) = self.pos;
         let (w, h) = self.size;
         let color = self.color.unwrap_or(self.g.color);
+        let depth = self.depth.unwrap_or(self.g.depth);
 
         self.g.draw_commands.push(DrawCommand {
             sprite: None,
@@ -80,6 +90,7 @@ impl<'a> DrawRect<'a> {
                 },
             ],
             indices: vec![0, 3, 1, 1, 3, 2],
+            depth,
         });
     }
 }
@@ -107,6 +118,7 @@ pub struct DrawSprite<'a> {
     source_pos: Option<(f32, f32)>,
     source_size: Option<(f32, f32)>,
     color: Option<Color>,
+    depth: Option<f32>,
 }
 
 impl<'a> DrawSprite<'a> {
@@ -119,6 +131,7 @@ impl<'a> DrawSprite<'a> {
             source_pos: None,
             source_size: None,
             color: None,
+            depth: None,
         }
     }
 
@@ -158,6 +171,12 @@ impl<'a> DrawSprite<'a> {
         self
     }
 
+    /// Sets the depth of the sprite.
+    pub fn depth(mut self, depth: f32) -> Self {
+        self.depth = Some(depth);
+        self
+    }
+
     fn commit(&mut self) -> Option<()> {
         let sprite = self.g.resource_manager.get(self.sprite)?;
         let w = sprite.width as f32;
@@ -174,6 +193,7 @@ impl<'a> DrawSprite<'a> {
             .map(|(sw, sh)| (sw / w, sh / h))
             .unwrap_or((1., 1.));
         let color = self.color.unwrap_or(self.g.color);
+        let depth = self.depth.unwrap_or(self.g.depth);
 
         self.g.draw_commands.push(DrawCommand {
             sprite: Some(self.sprite),
@@ -200,6 +220,7 @@ impl<'a> DrawSprite<'a> {
                 },
             ],
             indices: vec![0, 3, 1, 1, 3, 2],
+            depth,
         });
 
         Some(())
@@ -229,6 +250,7 @@ pub struct DrawText<'a> {
     font: Option<ResourceHandle<Font>>,
     size: Option<f32>,
     color: Option<Color>,
+    depth: Option<f32>,
 }
 
 #[cfg(feature = "text")]
@@ -241,6 +263,7 @@ impl<'a> DrawText<'a> {
             font: None,
             size: None,
             color: None,
+            depth: None,
         }
     }
 
@@ -262,13 +285,20 @@ impl<'a> DrawText<'a> {
         self
     }
 
+    /// Sets the depth of the text.
+    pub fn depth(mut self, depth: f32) -> Self {
+        self.depth = Some(depth);
+        self
+    }
+
     fn commit(&mut self) {
         let (x, y) = self.pos;
         let text = self.text;
         let font = self.font.unwrap_or_else(|| self.g.default_font());
         let size = self.size.unwrap_or(24.);
         let color = self.color.unwrap_or(self.g.color);
-        crate::text::draw_text(self.g, x, y, text, font, size, color);
+        let depth = self.depth.unwrap_or(self.g.depth);
+        crate::text::draw_text(self.g, x, y, text, font, size, color, depth);
     }
 }
 
