@@ -140,10 +140,21 @@ impl<'a> DrawSprite<'a> {
         self
     }
 
-    /// Sets the color of the sprite.
+    /// Sets the source rectangle of the sprite.
+    ///
+    /// Equivalent to calling [`source_pos`] and then [`source_size`].
+    ///
+    /// [`source_pos`]: DrawSprite::source_pos
+    /// [`source_size`]: DrawSprite::source_size
     pub fn source_rect(mut self, x: f32, y: f32, w: f32, h: f32) -> Self {
         self.source_pos = Some((x, y));
         self.source_size = Some((w, h));
+        self
+    }
+
+    /// Sets the color of the sprite.
+    pub fn color(mut self, color: Color) -> Self {
+        self.color = Some(color);
         self
     }
 
@@ -256,7 +267,8 @@ impl<'a> DrawText<'a> {
         let text = self.text;
         let font = self.font.unwrap_or_else(|| self.g.default_font());
         let size = self.size.unwrap_or(24.);
-        crate::text::draw_text(self.g, x, y, text, font, size);
+        let color = self.color.unwrap_or(self.g.color);
+        crate::text::draw_text(self.g, x, y, text, font, size, color);
     }
 }
 

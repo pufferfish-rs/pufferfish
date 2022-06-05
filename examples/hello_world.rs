@@ -16,10 +16,10 @@ struct State {
 fn main() {
     App::new()
         .with_title("Hello World")
-        .with_size(1024, 768)
+        .with_size(500, 500)
         .add_state(State {
             t: 0.,
-            player: Player { x: 512., y: 384. },
+            player: Player { x: 250., y: 250. },
         })
         .add_frame_callback(process_input)
         .add_frame_callback(draw)
@@ -50,6 +50,7 @@ fn draw(state: &State, g: &mut Graphics, assets: &mut Assets) {
         state.player.y - 16.,
         assets.load("examples/player.png"),
     );
-    g.draw_text(10., 10., "Hello, world!\nThis is a pufferfish example.");
+    g.draw_text(10., 10., "Hello, world!\nThis is a pufferfish example.")
+        .color(Color::RED);
     g.end();
 }

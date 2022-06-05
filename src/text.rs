@@ -7,7 +7,7 @@ use etagere::{AllocId, AtlasAllocator};
 use fontdue::layout::{GlyphPosition, GlyphRasterConfig, Layout, LayoutSettings, TextStyle};
 
 use crate::assets::ResourceHandle;
-use crate::graphics::{Graphics, Sprite};
+use crate::graphics::{Graphics, Sprite, Color};
 
 const ATLAS_SIZE: u32 = 2048;
 
@@ -58,6 +58,7 @@ pub(crate) fn draw_text(
     text: &str,
     font: ResourceHandle<Font>,
     size: f32,
+    color: Color,
 ) {
     if let Some(mut font) = g.resource_manager.get(font) {
         let Font { layout, inner } = &mut *font;
@@ -85,7 +86,8 @@ pub(crate) fn draw_text(
 
         for cmd in &inner.draw_commands {
             g.draw_sprite(cmd.x, cmd.y, inner.sprites[cmd.sprite])
-                .source_rect(cmd.sx, cmd.sy, cmd.sw, cmd.sh);
+                .source_rect(cmd.sx, cmd.sy, cmd.sw, cmd.sh)
+                .color(color);
         }
     }
 }
