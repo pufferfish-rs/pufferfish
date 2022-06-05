@@ -33,25 +33,25 @@ pub enum KeyCode {
     Y,
     Z,
 
-    // The '0' key above the alphabetic keys.
+    /// The '0' key above the alphabetic keys.
     Alpha0,
-    // The '1' key above the alphabetic keys.
+    /// The '1' key above the alphabetic keys.
     Alpha1,
-    // The '2' key above the alphabetic keys.
+    /// The '2' key above the alphabetic keys.
     Alpha2,
-    // The '3' key above the alphabetic keys.
+    /// The '3' key above the alphabetic keys.
     Alpha3,
-    // The '4' key above the alphabetic keys.
+    /// The '4' key above the alphabetic keys.
     Alpha4,
-    // The '5' key above the alphabetic keys.
+    /// The '5' key above the alphabetic keys.
     Alpha5,
-    // The '6' key above the alphabetic keys.
+    /// The '6' key above the alphabetic keys.
     Alpha6,
-    // The '7' key above the alphabetic keys.
+    /// The '7' key above the alphabetic keys.
     Alpha7,
-    // The '8' key above the alphabetic keys.
+    /// The '8' key above the alphabetic keys.
     Alpha8,
-    // The '9' key above the alphabetic keys.
+    /// The '9' key above the alphabetic keys.
     Alpha9,
 
     LeftControl,
@@ -60,6 +60,45 @@ pub enum KeyCode {
     RightControl,
     RightShift,
     RightAlt,
+
+    Enter,
+    Escape,
+    Backspace,
+    Tab,
+    Space,
+    
+    PageUp,
+    PageDown,
+    End,
+    Home,
+    Insert,
+    Delete,
+
+    /// The '0' key on the numeric keypad.
+    Num0,
+    /// The '1' key on the numeric keypad.
+    Num1,
+    /// The '2' key on the numeric keypad.
+    Num2,
+    /// The '3' key on the numeric keypad.
+    Num3,
+    /// The '4' key on the numeric keypad.
+    Num4,
+    /// The '5' key on the numeric keypad.
+    Num5,
+    /// The '6' key on the numeric keypad.
+    Num6,
+    /// The '7' key on the numeric keypad.
+    Num7,
+    /// The '8' key on the numeric keypad.
+    Num8,
+    /// The '9' key on the numeric keypad.
+    Num9,
+
+    Left,
+    Right,
+    Up,
+    Down,
 }
 
 /// An interface for querying user input. Accessible from [`App`](crate::App) by

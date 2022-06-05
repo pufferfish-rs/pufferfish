@@ -29,16 +29,16 @@ fn main() {
 fn process_input(state: &mut State, input: &Input) {
     state.t += 0.001;
 
-    if input.is_key_down(KeyCode::D) {
+    if input.is_key_down(KeyCode::D) || input.is_key_down(KeyCode::Right) {
         state.player.x += 3.;
     }
-    if input.is_key_down(KeyCode::A) {
+    if input.is_key_down(KeyCode::A) || input.is_key_down(KeyCode::Left) {
         state.player.x -= 3.;
     }
-    if input.is_key_down(KeyCode::W) {
+    if input.is_key_down(KeyCode::W) || input.is_key_down(KeyCode::Up) {
         state.player.y -= 3.;
     }
-    if input.is_key_down(KeyCode::S) {
+    if input.is_key_down(KeyCode::S) || input.is_key_down(KeyCode::Down) {
         state.player.y += 3.;
     }
 }

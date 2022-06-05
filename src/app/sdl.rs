@@ -144,6 +144,35 @@ fn convert_keycode(keycode: Option<SDLKeyCode>) -> Option<KeyCode> {
         SDLKeyCode::RShift => Some(KeyCode::RightShift),
         SDLKeyCode::RAlt => Some(KeyCode::RightAlt),
 
+        SDLKeyCode::Return => Some(KeyCode::Enter),
+        SDLKeyCode::Escape => Some(KeyCode::Escape),
+        SDLKeyCode::Backspace => Some(KeyCode::Backspace),
+        SDLKeyCode::Tab => Some(KeyCode::Tab),
+        SDLKeyCode::Space => Some(KeyCode::Space),
+        
+        SDLKeyCode::PageUp => Some(KeyCode::PageUp),
+        SDLKeyCode::PageDown => Some(KeyCode::PageDown),
+        SDLKeyCode::End => Some(KeyCode::End),
+        SDLKeyCode::Home => Some(KeyCode::Home),
+        SDLKeyCode::Insert => Some(KeyCode::Insert),
+        SDLKeyCode::Delete => Some(KeyCode::Delete),
+        
+        SDLKeyCode::Kp0 => Some(KeyCode::Num0),
+        SDLKeyCode::Kp1 => Some(KeyCode::Num1),
+        SDLKeyCode::Kp2 => Some(KeyCode::Num2),
+        SDLKeyCode::Kp3 => Some(KeyCode::Num3),
+        SDLKeyCode::Kp4 => Some(KeyCode::Num4),
+        SDLKeyCode::Kp5 => Some(KeyCode::Num5),
+        SDLKeyCode::Kp6 => Some(KeyCode::Num6),
+        SDLKeyCode::Kp7 => Some(KeyCode::Num7),
+        SDLKeyCode::Kp8 => Some(KeyCode::Num8),
+        SDLKeyCode::Kp9 => Some(KeyCode::Num9),
+
+        SDLKeyCode::Left => Some(KeyCode::Left),
+        SDLKeyCode::Right => Some(KeyCode::Right),
+        SDLKeyCode::Up => Some(KeyCode::Up),
+        SDLKeyCode::Down => Some(KeyCode::Down),
+
         _ => None,
     })
 }
