@@ -12,6 +12,11 @@ use crate::assets::{ResourceHandle, ResourceManager};
 #[cfg(feature = "text")]
 use crate::text::Font;
 
+mod color;
+pub use color::Color;
+mod commands;
+use commands::*;
+
 mod shader {
     pub const VERT: &str = r"
         #version 330
@@ -47,32 +52,6 @@ mod shader {
             out_color = vert_color * texture(tex, vert_uv);
         }
     ";
-}
-
-/// A linear RGBA color represented by 4 [f32]s.
-#[repr(C)]
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub struct Color {
-    /// The red component of the color.
-    pub r: f32,
-    /// The green component of the color.
-    pub g: f32,
-    /// The blue component of the color.
-    pub b: f32,
-    /// The alpha component of the color.
-    pub a: f32,
-}
-
-impl Color {
-    /// Creates a new color with the given components.
-    pub fn from_rgba(r: f32, g: f32, b: f32, a: f32) -> Color {
-        Color { r, g, b, a }
-    }
-
-    /// Creates a new color with the given components and an alpha of 1.
-    pub fn from_rgb(r: f32, g: f32, b: f32) -> Color {
-        Color { r, g, b, a: 1. }
-    }
 }
 
 /// A sprite.
@@ -127,20 +106,6 @@ impl Sprite {
     }
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, PartialEq, Debug)]
-struct Vertex {
-    pos: (f32, f32),
-    color: Color,
-    uv: (f32, f32),
-}
-
-struct DrawCommand {
-    sprite: Option<ResourceHandle<Sprite>>,
-    verts: Vec<Vertex>,
-    indices: Vec<u16>,
-}
-
 #[derive(Debug)]
 struct DrawBatch {
     sprite: Option<ResourceHandle<Sprite>>,
@@ -158,6 +123,7 @@ pub struct Graphics {
     vertex_buffer: Buffer,
     index_buffer: Buffer,
     blank_image: Image,
+    default_font: Option<ResourceHandle<Font>>,
     draw_commands: Vec<DrawCommand>,
     viewport: (f32, f32),
     color: Color,
@@ -212,9 +178,10 @@ impl Graphics {
             ImageWrap::Clamp,
             &[255_u8; 3],
         );
+        let default_font = None;
         let draw_commands = Vec::new();
         let viewport = (0., 0.);
-        let color = Color::from_rgb(1., 1., 1.);
+        let color = Color::WHITE;
 
         Graphics {
             ctx: ctx.clone(),
@@ -223,6 +190,7 @@ impl Graphics {
             vertex_buffer,
             index_buffer,
             blank_image,
+            default_font,
             draw_commands,
             viewport,
             color,
@@ -247,207 +215,35 @@ impl Graphics {
     /// Begins drawing.
     pub fn begin(&mut self) {}
 
-    /// Sets the color to use when drawing.
+    /// Sets the default color to use when drawing.
     pub fn set_color(&mut self, color: Color) {
         self.color = color;
     }
 
     /// Draws a rectangle at the given position with the given dimensions.
-    pub fn draw_rect(&mut self, x: f32, y: f32, w: f32, h: f32) {
-        self.draw_commands.push(DrawCommand {
-            sprite: None,
-            verts: vec![
-                Vertex {
-                    pos: (x, y),
-                    color: self.color,
-                    uv: (0., 0.),
-                },
-                Vertex {
-                    pos: (x + w, y),
-                    color: self.color,
-                    uv: (1., 0.),
-                },
-                Vertex {
-                    pos: (x + w, y + h),
-                    color: self.color,
-                    uv: (1., 1.),
-                },
-                Vertex {
-                    pos: (x, y + h),
-                    color: self.color,
-                    uv: (0., 1.),
-                },
-            ],
-            indices: vec![0, 3, 1, 1, 3, 2],
-        });
+    pub fn draw_rect(&mut self, x: f32, y: f32, w: f32, h: f32) -> DrawRect {
+        DrawRect::new(self, x, y, w, h)
     }
 
     /// Draws a sprite at the given position.
-    pub fn draw_sprite(&mut self, x: f32, y: f32, sprite: ResourceHandle<Sprite>) {
-        if let Some(s) = self.resource_manager.get(sprite) {
-            let Sprite { width, height, .. } = *s;
-            let w = width as f32;
-            let h = height as f32;
-            self.draw_commands.push(DrawCommand {
-                sprite: Some(sprite),
-                verts: vec![
-                    Vertex {
-                        pos: (x, y),
-                        color: self.color,
-                        uv: (0., 0.),
-                    },
-                    Vertex {
-                        pos: (x + w, y),
-                        color: self.color,
-                        uv: (1., 0.),
-                    },
-                    Vertex {
-                        pos: (x + w, y + h),
-                        color: self.color,
-                        uv: (1., 1.),
-                    },
-                    Vertex {
-                        pos: (x, y + h),
-                        color: self.color,
-                        uv: (0., 1.),
-                    },
-                ],
-                indices: vec![0, 3, 1, 1, 3, 2],
-            });
-        }
-    }
-
-    /// Draws a part of a sprite at the given position.
-    pub fn draw_sprite_part(
-        &mut self,
-        x: f32,
-        y: f32,
-        sx: f32,
-        sy: f32,
-        sw: f32,
-        sh: f32,
-        sprite: ResourceHandle<Sprite>,
-    ) {
-        if let Some(s) = self.resource_manager.get(sprite) {
-            let Sprite { width, height, .. } = *s;
-            let w = width as f32;
-            let h = height as f32;
-            self.draw_commands.push(DrawCommand {
-                sprite: Some(sprite),
-                verts: vec![
-                    Vertex {
-                        pos: (x, y),
-                        color: self.color,
-                        uv: (sx / w, sy / h),
-                    },
-                    Vertex {
-                        pos: (x + sw, y),
-                        color: self.color,
-                        uv: (sx / w + sw / w, sy / h),
-                    },
-                    Vertex {
-                        pos: (x + sw, y + sh),
-                        color: self.color,
-                        uv: (sx / w + sw / w, sy / h + sh / h),
-                    },
-                    Vertex {
-                        pos: (x, y + sh),
-                        color: self.color,
-                        uv: (sx / w, sy / h + sh / h),
-                    },
-                ],
-                indices: vec![0, 3, 1, 1, 3, 2],
-            });
-        }
-    }
-
-    /// Draws a sprite at the given position with the given dimensions.
-    pub fn draw_sprite_scaled(
-        &mut self,
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
-        sprite: ResourceHandle<Sprite>,
-    ) {
-        self.draw_commands.push(DrawCommand {
-            sprite: Some(sprite),
-            verts: vec![
-                Vertex {
-                    pos: (x, y),
-                    color: self.color,
-                    uv: (0., 0.),
-                },
-                Vertex {
-                    pos: (x + w, y),
-                    color: self.color,
-                    uv: (1., 0.),
-                },
-                Vertex {
-                    pos: (x + w, y + h),
-                    color: self.color,
-                    uv: (1., 1.),
-                },
-                Vertex {
-                    pos: (x, y + h),
-                    color: self.color,
-                    uv: (0., 1.),
-                },
-            ],
-            indices: vec![0, 3, 1, 1, 3, 2],
-        });
-    }
-
-    /// Draw a part of a sprite at the given position with the given dimensions.
-    pub fn draw_sprite_scaled_part(
-        &mut self,
-        dx: f32,
-        dy: f32,
-        dw: f32,
-        dh: f32,
-        sx: f32,
-        sy: f32,
-        sw: f32,
-        sh: f32,
-        sprite: ResourceHandle<Sprite>,
-    ) {
-        if let Some(s) = self.resource_manager.get(sprite) {
-            let Sprite { width, height, .. } = *s;
-            let w = width as f32;
-            let h = height as f32;
-            self.draw_commands.push(DrawCommand {
-                sprite: Some(sprite),
-                verts: vec![
-                    Vertex {
-                        pos: (dx, dy),
-                        color: self.color,
-                        uv: (sx / w, sy / h),
-                    },
-                    Vertex {
-                        pos: (dx + dw, dy),
-                        color: self.color,
-                        uv: (sx / w + sw / w, sy / h),
-                    },
-                    Vertex {
-                        pos: (dx + dw, dy + dh),
-                        color: self.color,
-                        uv: (sx / w + sw / w, sy / h + sh / h),
-                    },
-                    Vertex {
-                        pos: (dx, dy + dh),
-                        color: self.color,
-                        uv: (sx / w, sy / h + sh / h),
-                    },
-                ],
-                indices: vec![0, 3, 1, 1, 3, 2],
-            });
-        }
+    pub fn draw_sprite(&mut self, x: f32, y: f32, sprite: ResourceHandle<Sprite>) -> DrawSprite {
+        DrawSprite::new(self, x, y, sprite)
     }
 
     /// Draws the given text at the given position.
     #[cfg(feature = "text")]
-    pub fn draw_text(&mut self, x: f32, y: f32, text: &str, font: ResourceHandle<Font>, size: f32) {
-        crate::text::draw_text(self, x, y, text, font, size);
+    pub fn draw_text<'a>(&'a mut self, x: f32, y: f32, text: &'a str) -> DrawText {
+        DrawText::new(self, x, y, text)
+    }
+
+    /// Gets the default font, loading it if it hasn't been loaded already.
+    pub fn default_font(&mut self) -> ResourceHandle<Font> {
+        *self.default_font.get_or_insert_with(|| {
+            let font = self.resource_manager.allocate();
+            self.resource_manager
+                .set(font, Font::new(include_bytes!("graphics/monogram.ttf")));
+            font
+        })
     }
 
     /// Ends drawing and commits everything to the screen.
@@ -471,7 +267,7 @@ impl Graphics {
         let mut verts = Vec::new();
         let mut indices = Vec::new();
 
-        for draw_command in &self.draw_commands {
+        for draw_command in self.draw_commands.drain(..) {
             if curr_sprite != draw_command.sprite {
                 batches.push(DrawBatch {
                     sprite: curr_sprite,
@@ -490,7 +286,6 @@ impl Graphics {
             );
             verts.extend_from_slice(&draw_command.verts);
         }
-        self.draw_commands.clear();
 
         batches.push(DrawBatch {
             sprite: curr_sprite,

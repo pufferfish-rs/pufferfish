@@ -44,18 +44,12 @@ fn process_input(state: &mut State, input: &Input) {
 }
 
 fn draw(state: &State, g: &mut Graphics, assets: &mut Assets) {
-    g.clear(Color::from_rgb(0., 0., 0.));
+    g.clear(Color::BLACK);
     g.draw_sprite(
         state.player.x - 16.,
         state.player.y - 16.,
         assets.load("examples/player.png"),
     );
-    g.draw_text(
-        10.,
-        10.,
-        "Hello, world!\nThis is a pufferfish example.",
-        assets.load("examples/monogram.ttf"),
-        32.,
-    );
+    g.draw_text(10., 10., "Hello, world!\nThis is a pufferfish example.");
     g.end();
 }

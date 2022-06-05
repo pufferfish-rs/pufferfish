@@ -60,7 +60,7 @@ fn update(state: &mut State) {
 
 // Request arbitrary state through the callback's type signature
 fn draw(state: &State, g: &Graphics) {
-    g.clear(Color::from_rgb(0., 0., 0.));
+    g.clear(Color::BLACK);
     g.begin();
     // Draw code here...
     g.end();

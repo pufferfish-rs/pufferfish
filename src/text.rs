@@ -84,15 +84,8 @@ pub(crate) fn draw_text(
         }
 
         for cmd in &inner.draw_commands {
-            g.draw_sprite_part(
-                cmd.x,
-                cmd.y,
-                cmd.sx,
-                cmd.sy,
-                cmd.sw,
-                cmd.sh,
-                inner.sprites[cmd.sprite],
-            );
+            g.draw_sprite(cmd.x, cmd.y, inner.sprites[cmd.sprite])
+                .source_rect(cmd.sx, cmd.sy, cmd.sw, cmd.sh);
         }
     }
 }
