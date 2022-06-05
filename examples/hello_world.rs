@@ -45,6 +45,7 @@ fn process_input(state: &mut State, input: &Input) {
 
 fn draw(state: &State, g: &mut Graphics, assets: &mut Assets) {
     g.clear(Color::BLACK);
+    g.begin();
     g.draw_sprite(
         state.player.x - 16.,
         state.player.y - 16.,
