@@ -149,14 +149,14 @@ fn convert_keycode(keycode: Option<SDLKeyCode>) -> Option<KeyCode> {
         SDLKeyCode::Backspace => Some(KeyCode::Backspace),
         SDLKeyCode::Tab => Some(KeyCode::Tab),
         SDLKeyCode::Space => Some(KeyCode::Space),
-        
+
         SDLKeyCode::PageUp => Some(KeyCode::PageUp),
         SDLKeyCode::PageDown => Some(KeyCode::PageDown),
         SDLKeyCode::End => Some(KeyCode::End),
         SDLKeyCode::Home => Some(KeyCode::Home),
         SDLKeyCode::Insert => Some(KeyCode::Insert),
         SDLKeyCode::Delete => Some(KeyCode::Delete),
-        
+
         SDLKeyCode::Kp0 => Some(KeyCode::Num0),
         SDLKeyCode::Kp1 => Some(KeyCode::Num1),
         SDLKeyCode::Kp2 => Some(KeyCode::Num2),

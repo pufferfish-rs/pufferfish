@@ -66,7 +66,7 @@ pub enum KeyCode {
     Backspace,
     Tab,
     Space,
-    
+
     PageUp,
     PageDown,
     End,

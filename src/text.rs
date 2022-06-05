@@ -7,7 +7,7 @@ use etagere::{AllocId, AtlasAllocator};
 use fontdue::layout::{GlyphPosition, GlyphRasterConfig, Layout, LayoutSettings, TextStyle};
 
 use crate::assets::ResourceHandle;
-use crate::graphics::{Graphics, Sprite, Color};
+use crate::graphics::{Color, Graphics, Sprite};
 
 const ATLAS_SIZE: u32 = 2048;
 
