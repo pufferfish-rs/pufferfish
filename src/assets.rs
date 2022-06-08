@@ -32,7 +32,13 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::num::NonZeroU64;
 use std::ops::{Deref, DerefMut};
+use std::path::Path;
 use std::rc::Rc;
+
+use self::fs::BasicFileSystem;
+use crate::experimental::{FileSystem, FileTask};
+
+pub mod fs;
 
 /// Central storage of resources used in the game. Accessible from
 /// [`App`](crate::App) by default.
@@ -294,16 +300,20 @@ impl ResourceManager {
 /// default.
 pub struct Assets {
     resource_manager: ResourceManager,
+    fs: Box<dyn FileSystem>,
     loaders: HashMap<(TypeId, Cow<'static, str>), Rc<dyn Any>>,
     handles: HashMap<(TypeId, Cow<'static, str>), ResourceHandle<()>>,
+    tasks: Vec<Box<dyn FileTaskResolve>>,
 }
 
 impl Assets {
     pub(crate) fn new(resource_manager: &ResourceManager) -> Self {
         Self {
             resource_manager: resource_manager.clone(),
+            fs: Box::new(BasicFileSystem::new(Path::new(""))),
             loaders: HashMap::new(),
             handles: HashMap::new(),
+            tasks: Vec::new(),
         }
     }
 
@@ -340,9 +350,6 @@ impl Assets {
     /// Panics if no asset exists at the given path, the asset cannot be loaded
     /// successfully, or no loader matches the given file extension and type.
     pub fn load<T: 'static>(&mut self, path: impl Into<Cow<'static, str>>) -> ResourceHandle<T> {
-        use std::fs::read;
-        use std::path::Path;
-
         let type_id = TypeId::of::<T>();
         let path: Cow<'static, str> = path.into();
 
@@ -354,16 +361,64 @@ impl Assets {
                     let path: &str = &path;
                     let path = Path::new(path);
                     let ext = path.extension().and_then(|e| e.to_str()).unwrap();
-                    let loader = self
-                        .loaders
-                        .get(&(type_id, ext.into()))
-                        .and_then(|e| e.downcast_ref::<Box<dyn Fn(&[u8]) -> T + 'static>>())
-                        .unwrap();
-                    let handle = self.resource_manager.allocate();
-                    self.resource_manager
-                        .set(handle, loader(&read(path).unwrap()));
+                    let handle = self.resource_manager.allocate::<T>();
+                    let mut task = Box::new(FileTaskResolveImpl {
+                        task: self.fs.read(path),
+                        handle,
+                        ext: ext.to_string(),
+                    });
+                    if !task.poll(&mut self.loaders, &self.resource_manager) {
+                        self.tasks.push(task);
+                    }
                     transmute_handle(handle)
                 }),
         )
+    }
+
+    /// Updates any pending file loads. This is called internally at the start
+    /// of each frame.
+    pub fn update(&mut self) {
+        let mut i = 0;
+        while i < self.tasks.len() {
+            if self.tasks[i].poll(&mut self.loaders, &self.resource_manager) {
+                self.tasks.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+    }
+}
+
+trait FileTaskResolve {
+    fn poll(
+        &mut self,
+        loaders: &mut HashMap<(TypeId, Cow<'static, str>), Rc<dyn Any>>,
+        rm: &ResourceManager,
+    ) -> bool;
+}
+
+struct FileTaskResolveImpl<T: 'static> {
+    task: Box<dyn FileTask>,
+    handle: ResourceHandle<T>,
+    ext: String,
+}
+
+impl<T: 'static> FileTaskResolve for FileTaskResolveImpl<T> {
+    fn poll(
+        &mut self,
+        loaders: &mut HashMap<(TypeId, Cow<'static, str>), Rc<dyn Any>>,
+        rm: &ResourceManager,
+    ) -> bool {
+        if let Some(data) = self.task.poll() {
+            let type_id = TypeId::of::<T>();
+            let loader = loaders
+                .get(&(type_id, self.ext.as_str().into()))
+                .and_then(|e| e.downcast_ref::<Box<dyn Fn(&[u8]) -> T + 'static>>())
+                .unwrap();
+            rm.set(self.handle, loader(&data));
+            true
+        } else {
+            false
+        }
     }
 }

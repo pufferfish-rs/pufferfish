@@ -67,6 +67,7 @@ mod app;
 pub use app::*;
 
 pub mod assets;
+pub mod experimental;
 pub mod graphics;
 pub mod input;
 #[cfg(feature = "text")]

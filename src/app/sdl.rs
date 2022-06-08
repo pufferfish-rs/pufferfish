@@ -5,7 +5,7 @@ use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::Keycode as SDLKeyCode;
 use sdl2::video::GLProfile;
 
-use crate::assets::ResourceManager;
+use crate::assets::{Assets, ResourceManager};
 use crate::graphics::Graphics;
 use crate::input::{Input, KeyCode};
 use crate::App;
@@ -53,6 +53,10 @@ pub fn run(mut app: App) {
             // SAFETY: We are guaranteed to have `Input`
             let input = unsafe { app.state.get_mut::<Input>().unwrap_unchecked() };
             input.update();
+
+            // SAFETY: We are guaranteed to have `Assets`
+            let assets = unsafe { app.state.get_mut::<Assets>().unwrap_unchecked() };
+            assets.update();
 
             for event in event_pump.poll_iter() {
                 match event {
