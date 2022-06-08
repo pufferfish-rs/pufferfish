@@ -175,7 +175,6 @@ pub struct App {
     resizable: bool,
     state: TypeMap,
     frame_callbacks: Box<dyn Fn(&mut TypeMap)>,
-    state_callbacks: Box<dyn Fn(&mut TypeMap)>,
     init_callbacks: Box<dyn Fn(&mut TypeMap)>,
 }
 
@@ -188,7 +187,6 @@ impl Default for App {
             resizable: true,
             state: TypeMap::new(),
             frame_callbacks: Box::new(|_| {}),
-            state_callbacks: Box::new(|_| {}),
             init_callbacks: Box::new(|_| {}),
         }
     }
@@ -243,15 +241,16 @@ impl App {
 
     /// Adds new state to the application based on preexisting state.
     ///
-    /// The given closures are executed in the order they are added when the
-    /// application is initialized *before* any init callbacks, and the returned
-    /// values are added to the application state.
+    /// Closures registered via this function are executed in the order they are
+    /// added when the application is initialized, alongside callbacks
+    /// registered via [`add_init_callback`], and the returned value is
+    /// added to the application state.
     pub fn add_state_with<T: 'static, Args, F: Callback<Args, T> + 'static>(
         mut self,
         callback: F,
     ) -> Self {
         F::assert_legal();
-        replace_with(&mut self.state_callbacks, |cbs| {
+        replace_with(&mut self.init_callbacks, |cbs| {
             Box::new(move |args| {
                 cbs(args);
                 let state = callback.call(args);
@@ -333,7 +332,6 @@ impl App {
 
         self.state.insert(assets);
 
-        (self.state_callbacks)(&mut self.state);
         (self.init_callbacks)(&mut self.state);
     }
 }
