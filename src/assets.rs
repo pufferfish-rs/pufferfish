@@ -177,7 +177,6 @@ pub struct ResourceRef<T> {
 
 impl<T> ResourceRef<T> {
     fn new(inner: Resource) -> Self {
-        inner.lock();
         Self {
             inner,
             _marker: PhantomData,
@@ -258,11 +257,12 @@ impl ResourceManager {
         let mut storage = self.storage.borrow_mut();
         unsafe {
             // SAFETY: We know everything exists and the type is correct.
-            let val = storage
+            let resource = storage
                 .get_mut(&(type_id, handle.idx.get()))
-                .unwrap_unchecked()
-                .downcast_mut::<Option<T>>();
-            *val = Some(data);
+                .unwrap_unchecked();
+            resource.lock();
+            *resource.downcast_mut::<Option<T>>() = Some(data);
+            resource.unlock();
         }
     }
 
@@ -287,7 +287,9 @@ impl ResourceManager {
             let inner = inner
                 .get_mut(&(type_id, handle.idx.get()))
                 .unwrap_unchecked();
+            inner.lock();
             if inner.downcast_ref::<Option<T>>().is_none() {
+                inner.unlock();
                 None
             } else {
                 Some(ResourceRef::new(inner.clone()))
