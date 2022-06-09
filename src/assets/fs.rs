@@ -3,48 +3,62 @@
 use std::borrow::Cow;
 use std::fs::File as StdFile;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::experimental::{FileSystem, FileTask};
 
 struct BasicFileTask {
     std: StdFile,
-    buffer: Option<Vec<u8>>,
+    buffer: Vec<u8>,
     len: usize,
+    path: PathBuf,
 }
 
 impl BasicFileTask {
-    fn new(std: StdFile) -> Self {
-        let buffer = vec![0; 100000];
+    fn new(path: PathBuf) -> Self {
+        let std = StdFile::open(&path).unwrap();
+        let buffer = vec![0; 1024];
         BasicFileTask {
             std,
-            buffer: Some(buffer),
+            buffer,
             len: 0,
+            path,
         }
     }
 }
 
 impl FileTask for BasicFileTask {
-    fn poll(&mut self) -> Option<Vec<u8>> {
-        match self
-            .std
-            .read(&mut self.buffer.as_mut().unwrap()[self.len..])
-        {
-            Ok(0) => {
-                unsafe {
-                    self.buffer.as_mut().unwrap().set_len(self.len);
+    fn poll(&mut self) -> bool {
+        if self.len == self.buffer.len() {
+            let mut probe = [0_u8; 1024];
+            let len = self.std.read(&mut probe).unwrap();
+            if len == 0 {
+                return true;
+            } else {
+                println!("Resizing buffer from {} bytes to {} bytes; {} new bytes read", self.len, self.len * 2, len);
+                self.buffer.resize(self.len * 2, 0);
+                self.buffer[self.len..self.len + len].copy_from_slice(&probe[..len]);
+                self.len += len;
+            }
+        } else {
+            match self.std.read(&mut self.buffer[self.len..]) {
+                Ok(0) => return true,
+                Ok(n) => self.len += n,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(_) => {
+                    panic!();
                 }
-                self.buffer.take()
-            }
-            Ok(n) => {
-                self.len += n;
-                None
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => None,
-            Err(_) => {
-                panic!();
-            }
+            };
         }
+        false
+    }
+
+    fn data(&self) -> &[u8] {
+        &self.buffer[..self.len]
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
     }
 }
 
@@ -66,8 +80,7 @@ impl FileSystem for BasicFileSystem {
     fn read(&mut self, path: &Path) -> Box<dyn FileTask> {
         let mut path_buf = self.base_path.to_path_buf();
         path_buf.push(path);
-        let std = StdFile::open(&path_buf).unwrap();
-        let file = BasicFileTask::new(std);
+        let file = BasicFileTask::new(path_buf);
         Box::new(file)
     }
 }

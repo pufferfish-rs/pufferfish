@@ -11,7 +11,13 @@ pub trait FileSystem {
 
 /// Common interface for file loading tasks.
 pub trait FileTask {
-    /// Polls the file task for completion and returns `None` if the task is not
-    /// yet complete or `Some(data)` if it is.
-    fn poll(&mut self) -> Option<Vec<u8>>;
+    /// Polls the file task for completion.
+    fn poll(&mut self) -> bool;
+
+    /// Returns a slice of the data buffer. The buffer may not be fully
+    /// populated if the task is not yet complete.
+    fn data(&self) -> &[u8];
+
+    /// Returns the original path of the file being loaded.
+    fn path(&self) -> &Path;
 }

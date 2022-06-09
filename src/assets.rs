@@ -301,10 +301,12 @@ impl ResourceManager {
 pub struct Assets {
     resource_manager: ResourceManager,
     fs: Box<dyn FileSystem>,
-    loaders: HashMap<(TypeId, Cow<'static, str>), Rc<dyn Any>>,
+    loaders: HashMap<(TypeId, Cow<'static, str>), Loader>,
     handles: HashMap<(TypeId, Cow<'static, str>), ResourceHandle<()>>,
-    tasks: Vec<Box<dyn FileTaskResolve>>,
+    tasks: Vec<FileTaskResolve>,
 }
+
+type Loader = Rc<dyn Fn(&[u8], &mut Resource)>;
 
 impl Assets {
     pub(crate) fn new(resource_manager: &ResourceManager) -> Self {
@@ -329,7 +331,16 @@ impl Assets {
         extensions: [impl Into<Cow<'static, str>>; LEN],
         loader: impl Fn(&[u8]) -> T + 'static,
     ) {
-        let loader: Rc<dyn Any> = Rc::<Box<dyn Fn(&[u8]) -> T>>::new(Box::new(loader));
+        let loader: Rc<dyn Fn(&[u8], &mut Resource)> =
+            Rc::new(move |data: &[u8], resource: &mut Resource| {
+                let val = loader(data);
+                resource.lock();
+                // SAFETY: We know that the type is correct and we have the lock.
+                unsafe {
+                    *resource.downcast_mut::<Option<T>>() = Some(val);
+                }
+                resource.unlock();
+            });
         for extension in extensions {
             self.loaders
                 .insert((TypeId::of::<T>(), extension.into()), Rc::clone(&loader));
@@ -360,13 +371,12 @@ impl Assets {
                 .or_insert_with(|| {
                     let path: &str = &path;
                     let path = Path::new(path);
-                    let ext = path.extension().and_then(|e| e.to_str()).unwrap();
                     let handle = self.resource_manager.allocate::<T>();
-                    let mut task = Box::new(FileTaskResolveImpl {
+                    let mut task = FileTaskResolve {
                         task: self.fs.read(path),
-                        handle,
-                        ext: ext.to_string(),
-                    });
+                        type_id,
+                        idx: handle.idx,
+                    };
                     if !task.poll(&mut self.loaders, &self.resource_manager) {
                         self.tasks.push(task);
                     }
@@ -389,36 +399,35 @@ impl Assets {
     }
 }
 
-trait FileTaskResolve {
-    fn poll(
-        &mut self,
-        loaders: &mut HashMap<(TypeId, Cow<'static, str>), Rc<dyn Any>>,
-        rm: &ResourceManager,
-    ) -> bool;
-}
-
-struct FileTaskResolveImpl<T: 'static> {
+struct FileTaskResolve {
     task: Box<dyn FileTask>,
-    handle: ResourceHandle<T>,
-    ext: String,
+    type_id: TypeId,
+    idx: NonZeroU64,
 }
 
-impl<T: 'static> FileTaskResolve for FileTaskResolveImpl<T> {
+impl FileTaskResolve {
     fn poll(
         &mut self,
-        loaders: &mut HashMap<(TypeId, Cow<'static, str>), Rc<dyn Any>>,
+        loaders: &mut HashMap<(TypeId, Cow<'static, str>), Loader>,
         rm: &ResourceManager,
     ) -> bool {
-        if let Some(data) = self.task.poll() {
-            let type_id = TypeId::of::<T>();
+        let complete = self.task.poll();
+        if complete {
             let loader = loaders
-                .get(&(type_id, self.ext.as_str().into()))
-                .and_then(|e| e.downcast_ref::<Box<dyn Fn(&[u8]) -> T + 'static>>())
+                .get(&(
+                    self.type_id,
+                    self.task
+                        .path()
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap()
+                        .into(),
+                ))
                 .unwrap();
-            rm.set(self.handle, loader(&data));
-            true
-        } else {
-            false
+            let mut storage = rm.storage.borrow_mut();
+            let resource = storage.get_mut(&(self.type_id, self.idx.get())).unwrap();
+            loader(self.task.data(), resource);
         }
+        complete
     }
 }
