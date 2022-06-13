@@ -245,6 +245,8 @@ impl App {
     /// added when the application is initialized, alongside callbacks
     /// registered via [`add_init_callback`], and the returned value is
     /// added to the application state.
+    ///
+    /// [`add_init_callback`]: Self::add_init_callback
     pub fn add_state_with<T: 'static, Args, F: Callback<Args, T> + 'static>(
         mut self,
         callback: F,
