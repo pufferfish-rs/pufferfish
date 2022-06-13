@@ -1,6 +1,5 @@
 //! File system abstractions.
 
-use std::borrow::Cow;
 use std::fs::File as StdFile;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -35,7 +34,6 @@ impl FileTask for BasicFileTask {
             if len == 0 {
                 return true;
             } else {
-                println!("Resizing buffer from {} bytes to {} bytes; {} new bytes read", self.len, self.len * 2, len);
                 self.buffer.resize(self.len * 2, 0);
                 self.buffer[self.len..self.len + len].copy_from_slice(&probe[..len]);
                 self.len += len;
@@ -63,22 +61,51 @@ impl FileTask for BasicFileTask {
 }
 
 /// A file system that simply loads files from the given path.
+///
+/// By default, assets files are loaded from the parent directory of the
+/// executable ([`BasicFileSystem`]) unless the executable is located in a
+/// subdirectory of `CARGO_MANIFEST_DIR`, in which case asset files are loaded
+/// from `CARGO_MANIFEST_DIR`. All symbolic links are resolved.
 pub struct BasicFileSystem {
-    base_path: Cow<'static, Path>,
+    root: PathBuf,
 }
 
 impl BasicFileSystem {
-    /// Creates a new basic file system with the given base path.
-    pub fn new(base_path: impl Into<Cow<'static, Path>>) -> Self {
+    /// Creates a new [`BasicFileSystem`]
+    pub fn new() -> Self {
+        Self::new_with_root_relative("")
+    }
+
+    /// Creates a new [`BasicFileSystem`] with the given root path.
+    pub fn new_with_root(root: impl AsRef<Path>) -> Self {
         Self {
-            base_path: base_path.into(),
+            root: root.as_ref().to_path_buf(),
         }
+    }
+
+    /// Creates a new [`BasicFileSystem`] with the given root path.
+    ///
+    /// The root path is interpreted relatively to the default root
+    /// path.
+    pub fn new_with_root_relative(root: impl AsRef<Path>) -> Self {
+        let mut default_root = std::env::current_exe()
+            .ok()
+            .and_then(|e| e.parent().and_then(|e| e.canonicalize().ok()))
+            .map(|e| {
+                let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR")).canonicalize().ok();
+                manifest_dir
+                    .and_then(|p| e.starts_with(&p).then(|| p))
+                    .unwrap_or(e)
+            })
+            .unwrap_or_else(PathBuf::new);
+        default_root.push(root);
+        Self::new_with_root(default_root)
     }
 }
 
 impl FileSystem for BasicFileSystem {
     fn read(&mut self, path: &Path) -> Box<dyn FileTask> {
-        let mut path_buf = self.base_path.to_path_buf();
+        let mut path_buf = self.root.clone();
         path_buf.push(path);
         let file = BasicFileTask::new(path_buf);
         Box::new(file)

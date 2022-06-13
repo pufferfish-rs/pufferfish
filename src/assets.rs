@@ -300,9 +300,18 @@ impl ResourceManager {
 
 /// Abstraction for loading assets. Accessible from [`App`](crate::App) by
 /// default.
+///
+/// By default, asset files are loaded from a [`BasicFileSystem`] initialized
+/// with default settings. To change this behavior, set the file system by
+/// calling [`set_fs`]. Also note that the default file system is not allocated
+/// and initialized until you attempt to read a file.
+///
+/// [`set_fs`]: Self::set_fs
+/// [`init_fs`]: Self::init_fs
 pub struct Assets {
     resource_manager: ResourceManager,
     fs: Box<dyn FileSystem>,
+    fs_init: bool,
     loaders: HashMap<(TypeId, Cow<'static, str>), Loader>,
     handles: HashMap<(TypeId, Cow<'static, str>), ResourceHandle<()>>,
     tasks: Vec<FileTaskResolve>,
@@ -312,9 +321,17 @@ type Loader = Rc<dyn Fn(&[u8], &mut Resource)>;
 
 impl Assets {
     pub(crate) fn new(resource_manager: &ResourceManager) -> Self {
+        struct PlaceholderFileSystem;
+        impl FileSystem for PlaceholderFileSystem {
+            fn read(&mut self, _: &Path) -> Box<dyn FileTask> {
+                unreachable!()
+            }
+        }
+
         Self {
             resource_manager: resource_manager.clone(),
-            fs: Box::new(BasicFileSystem::new(Path::new(""))),
+            fs: Box::new(PlaceholderFileSystem),
+            fs_init: false,
             loaders: HashMap::new(),
             handles: HashMap::new(),
             tasks: Vec::new(),
@@ -349,6 +366,12 @@ impl Assets {
         }
     }
 
+    /// Sets the file system to use for loading assets.
+    pub fn set_fs(&mut self, fs: impl FileSystem + 'static) {
+        self.fs = Box::new(fs);
+        self.fs_init = true;
+    }
+
     /// Returns a [`ResourceHandle`] of the given type representing the asset at
     /// the given path. The loader is only called and a new [`ResourceHandle`]
     /// allocated if the asset has not already been loaded. Otherwise, a copy of
@@ -374,6 +397,10 @@ impl Assets {
                     let path: &str = &path;
                     let path = Path::new(path);
                     let handle = self.resource_manager.allocate::<T>();
+                    if !self.fs_init {
+                        self.fs = Box::new(BasicFileSystem::new());
+                        self.fs_init = true;
+                    }
                     let mut task = FileTaskResolve {
                         task: self.fs.read(path),
                         type_id,
