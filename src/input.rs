@@ -107,6 +107,7 @@ pub struct Input {
     pub(crate) keys_down: Vec<KeyCode>,
     pub(crate) keys_pressed: Vec<KeyCode>,
     pub(crate) keys_released: Vec<KeyCode>,
+    pub(crate) chars_pressed: Vec<char>,
 }
 
 impl Input {
@@ -115,6 +116,7 @@ impl Input {
             keys_down: Vec::new(),
             keys_pressed: Vec::new(),
             keys_released: Vec::new(),
+            chars_pressed: Vec::new(),
         }
     }
 
@@ -153,5 +155,11 @@ impl Input {
     /// update.
     pub fn get_keys_released(&self) -> impl Iterator<Item = KeyCode> + '_ {
         self.keys_released.iter().copied()
+    }
+
+    /// Drains and returns an iterator over all characters that have been
+    /// pressed.
+    pub fn get_chars_pressed(&mut self) -> impl Iterator<Item = char> + '_ {
+        self.chars_pressed.drain(..)
     }
 }

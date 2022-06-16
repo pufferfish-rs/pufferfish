@@ -90,6 +90,9 @@ pub fn run(mut app: App) {
                             input.keys_released.push(key);
                         }
                     }
+                    Event::TextInput { text, .. } => {
+                        input.chars_pressed.extend(text.chars());
+                    }
                     _ => {}
                 }
             }
