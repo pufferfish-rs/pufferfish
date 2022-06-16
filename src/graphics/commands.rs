@@ -308,3 +308,80 @@ impl Drop for DrawText<'_> {
         self.commit();
     }
 }
+
+/// Glyph to be drawn.
+///
+/// This is a builder struct that allows you to specify extra parameters for the
+/// glyph via method chaining. The glyph is commited to the [`Graphics`]
+/// struct when [`DrawGlyph`] is dropped.
+///
+/// This struct is created using the [`draw_glyph`] method on [`Graphics`].
+///
+/// [`draw_glyph`]: Graphics::draw_glyph
+#[cfg(feature = "text")]
+pub struct DrawGlyph<'a> {
+    g: &'a mut Graphics,
+    pos: (f32, f32),
+    c: char,
+    font: Option<ResourceHandle<Font>>,
+    size: Option<f32>,
+    color: Option<Color>,
+    depth: Option<f32>,
+}
+
+#[cfg(feature = "text")]
+impl<'a> DrawGlyph<'a> {
+    pub(super) fn new(g: &'a mut Graphics, x: f32, y: f32, c: char) -> Self {
+        DrawGlyph {
+            g,
+            pos: (x, y),
+            c,
+            font: None,
+            size: None,
+            color: None,
+            depth: None,
+        }
+    }
+
+    /// Sets the font of the text.
+    pub fn font(mut self, font: ResourceHandle<Font>) -> Self {
+        self.font = Some(font);
+        self
+    }
+
+    /// Sets the size of the text.
+    pub fn size(mut self, size: f32) -> Self {
+        self.size = Some(size);
+        self
+    }
+
+    /// Sets the color of the text.
+    pub fn color(mut self, color: Color) -> Self {
+        self.color = Some(color);
+        self
+    }
+
+    /// Sets the depth of the text.
+    pub fn depth(mut self, depth: f32) -> Self {
+        self.depth = Some(depth);
+        self
+    }
+
+    fn commit(&mut self) {
+        let (x, y) = self.pos;
+        let c = self.c;
+        let font = self.font.unwrap_or_else(|| self.g.default_font());
+        let size = self.size.unwrap_or(24.);
+        let color = self.color.unwrap_or(self.g.color);
+        let depth = self.depth.unwrap_or(self.g.depth);
+
+        crate::text::draw_glyph(self.g, x, y, c, font, size, color, depth);
+    }
+}
+
+#[cfg(feature = "text")]
+impl Drop for DrawGlyph<'_> {
+    fn drop(&mut self) {
+        self.commit();
+    }
+}

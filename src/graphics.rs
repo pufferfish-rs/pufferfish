@@ -9,8 +9,6 @@ use fugu::{
 };
 
 use crate::assets::{ResourceHandle, ResourceManager};
-#[cfg(feature = "text")]
-use crate::text::Font;
 
 mod color;
 pub use color::Color;
@@ -130,7 +128,6 @@ pub struct Graphics {
     depth: f32,
 }
 
-#[allow(clippy::too_many_arguments)]
 impl Graphics {
     pub(crate) fn new(ctx: &Rc<Context>, resource_manager: &ResourceManager) -> Graphics {
         ctx.set_blend(BlendState {
@@ -238,31 +235,6 @@ impl Graphics {
         DrawSprite::new(self, x, y, sprite)
     }
 
-    /// Draws the given text at the given position.
-    #[cfg(feature = "text")]
-    pub fn draw_text<'a>(&'a mut self, x: f32, y: f32, text: &'a str) -> DrawText {
-        DrawText::new(self, x, y, text)
-    }
-
-    /// Gets the default font, loading it if it hasn't been loaded already.
-    #[cfg(feature = "text")]
-    pub fn default_font(&mut self) -> ResourceHandle<Font> {
-        *self.default_font.get_or_insert_with(|| {
-            let font = self.resource_manager.allocate();
-            self.resource_manager
-                .set(font, Font::new(include_bytes!("graphics/monogram.otf")));
-            font
-        })
-    }
-
-    /// Overrides the default font returned by [`default_font`].
-    ///
-    /// [`default_font`]: Graphics::default_font
-    #[cfg(feature = "text")]
-    pub fn set_default_font(&mut self, font: ResourceHandle<Font>) {
-        self.default_font = Some(font);
-    }
-
     /// Ends drawing and commits everything to the screen.
     pub fn end(&mut self) {
         if self.draw_commands.is_empty() {
@@ -331,5 +303,87 @@ impl Graphics {
         }
 
         self.ctx.end_render_pass();
+    }
+}
+
+#[cfg(feature = "text")]
+use crate::text::{
+    measure_font, measure_glyph, measure_kern, measure_text, Font, FontMetrics, GlyphMetrics,
+};
+
+#[cfg(feature = "text")]
+impl Graphics {
+    /// Draws the given text at the given position.
+    pub fn draw_text<'a>(&'a mut self, x: f32, y: f32, text: &'a str) -> DrawText {
+        DrawText::new(self, x, y, text)
+    }
+
+    /// Draws the given glyph at the given position.
+    pub fn draw_glyph(&mut self, x: f32, y: f32, c: char) -> DrawGlyph {
+        DrawGlyph::new(self, x, y, c)
+    }
+
+    /// Gets the default font, loading it if it hasn't been loaded already.
+    pub fn default_font(&mut self) -> ResourceHandle<Font> {
+        *self.default_font.get_or_insert_with(|| {
+            let font = self.resource_manager.allocate();
+            self.resource_manager
+                .set(font, Font::new(include_bytes!("graphics/monogram.otf")));
+            font
+        })
+    }
+
+    /// Overrides the default font returned by [`default_font`].
+    ///
+    /// [`default_font`]: Graphics::default_font
+    pub fn set_default_font(&mut self, font: ResourceHandle<Font>) {
+        self.default_font = Some(font);
+    }
+
+    /// Returns the metrics of the given glyph in the given font or `None`
+    /// if the font is not loaded yet or the given glyph does not exist.
+    pub fn measure_glyph(
+        &self,
+        c: char,
+        font: ResourceHandle<Font>,
+        size: f32,
+    ) -> Option<GlyphMetrics> {
+        measure_glyph(c, &*self.resource_manager.get::<Font>(font)?, size)
+    }
+
+    /// Measures and returns the width and height of the given text in the given
+    /// font, or (0, 0) if the font is not loaded yet.
+    pub fn measure_text(&self, text: &str, font: ResourceHandle<Font>, size: f32) -> (f32, f32) {
+        if let Some(mut font) = self.resource_manager.get::<Font>(font) {
+            measure_text(text, &mut *font, size)
+        } else {
+            (0., 0.)
+        }
+    }
+
+    /// Returns the metrics of the given font or `None` if the font is not
+    /// loaded yet.
+    pub fn measure_font(&self, font: ResourceHandle<Font>, size: f32) -> Option<FontMetrics> {
+        self.resource_manager
+            .get::<Font>(font)
+            .map(|font| measure_font(&*font, size))
+    }
+
+    /// Returns the kerning between the given glyphs in the given font or `None`
+    /// if the font is not loaded yet or a kerning value does not exist between
+    /// the given pair of glyphs.
+    pub fn measure_kern(
+        &self,
+        left: char,
+        right: char,
+        font: ResourceHandle<Font>,
+        size: f32,
+    ) -> Option<f32> {
+        measure_kern(
+            left,
+            right,
+            &*self.resource_manager.get::<Font>(font)?,
+            size,
+        )
     }
 }
