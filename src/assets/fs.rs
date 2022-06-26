@@ -92,8 +92,9 @@ impl BasicFileSystem {
             .ok()
             .and_then(|e| e.parent().and_then(|e| e.canonicalize().ok()))
             .map(|e| {
-                let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR")).canonicalize().ok();
-                manifest_dir
+                std::env::var("CARGO_MANIFEST_DIR")
+                    .ok()
+                    .and_then(|e| Path::new(&e).canonicalize().ok())
                     .and_then(|p| e.starts_with(&p).then(|| p))
                     .unwrap_or(e)
             })
