@@ -127,7 +127,13 @@ impl Drop for TypeMap {
 /// signature.
 pub trait Callback<Args, Output> {
     /// Calls the callback with the given state and returns its output.
-    fn call(&self, args: &mut TypeMap) -> Output;
+    ///
+    /// # Safety
+    /// It is up to the caller to guarantee that the callback's type signature
+    /// is legal. Calling this function on an illegal callback is undefined
+    /// behavior.
+    unsafe fn call(&self, args: &mut TypeMap) -> Output;
+
     /// Asserts that the callback's type signature is legal.
     ///
     /// # Panics
@@ -138,9 +144,9 @@ pub trait Callback<Args, Output> {
 macro_rules! impl_callback {
     ($($first:ident$(, $($other:ident),+)?$(,)?)?) => {
         impl<$($first$(, $($other),+)?,)? Func, Output> Callback<($($first$(, $($other),+)?)?,), Output> for Func where Func: Fn($($first$(, $($other),+)?,)?) -> Output, $($first: Argable$(, $($other: Argable),+)?,)? {
-            fn call(&self, args: &mut TypeMap) -> Output {
+            unsafe fn call(&self, args: &mut TypeMap) -> Output {
                 // SAFETY: We already asserted that the callback signature is legal.
-                unsafe { self($($first::get(args)$(, $($other::get(args)),+)?,)?) }
+                self($($first::get(args)$(, $($other::get(args)),+)?,)?)
             }
 
             fn assert_legal() {
@@ -253,7 +259,7 @@ impl App {
     ) -> Self {
         F::assert_legal();
         replace_with(&mut self.init_callbacks, |cbs| {
-            Box::new(move |args| {
+            Box::new(move |args| unsafe {
                 cbs(args);
                 let state = callback.call(args);
                 args.insert(state);
@@ -271,7 +277,7 @@ impl App {
     ) -> Self {
         F::assert_legal();
         replace_with(&mut self.frame_callbacks, |cbs| {
-            Box::new(move |args| {
+            Box::new(move |args| unsafe {
                 cbs(args);
                 callback.call(args);
             })
@@ -287,7 +293,7 @@ impl App {
     pub fn add_init_callback<Args, F: Callback<Args, ()> + 'static>(mut self, callback: F) -> Self {
         F::assert_legal();
         replace_with(&mut self.init_callbacks, |cbs| {
-            Box::new(move |args| {
+            Box::new(move |args| unsafe {
                 cbs(args);
                 callback.call(args);
             })
