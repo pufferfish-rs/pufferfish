@@ -74,7 +74,7 @@ impl TypeMap {
         let type_id = TypeId::of::<T>();
         if let Some(v) = self.inner.remove(&type_id) {
             unsafe {
-                Box::from_raw(v.as_ptr());
+                drop(Box::from_raw(v.as_ptr()));
             }
         }
         // SAFETY: The pointer returned by Box::into_raw is guaranteed to be non-null.
@@ -115,7 +115,7 @@ impl Drop for TypeMap {
     fn drop(&mut self) {
         for (_, v) in self.inner.drain() {
             unsafe {
-                Box::from_raw(v.as_ptr());
+                drop(Box::from_raw(v.as_ptr()));
             }
         }
     }

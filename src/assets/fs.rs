@@ -70,10 +70,16 @@ pub struct BasicFileSystem {
     root: PathBuf,
 }
 
+impl Default for BasicFileSystem {
+    fn default() -> Self {
+        Self::new_with_root_relative("")
+    }
+}
+
 impl BasicFileSystem {
     /// Creates a new [`BasicFileSystem`]
     pub fn new() -> Self {
-        Self::new_with_root_relative("")
+        Self::default()
     }
 
     /// Creates a new [`BasicFileSystem`] with the given root path.

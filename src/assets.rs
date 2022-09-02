@@ -350,16 +350,15 @@ impl Assets {
         extensions: [impl Into<Cow<'static, str>>; LEN],
         loader: impl Fn(&[u8]) -> T + 'static,
     ) {
-        let loader: Rc<dyn Fn(&[u8], &mut Resource)> =
-            Rc::new(move |data: &[u8], resource: &mut Resource| {
-                let val = loader(data);
-                resource.lock();
-                // SAFETY: We know that the type is correct and we have the lock.
-                unsafe {
-                    *resource.downcast_mut::<Option<T>>() = Some(val);
-                }
-                resource.unlock();
-            });
+        let loader: Loader = Rc::new(move |data: &[u8], resource: &mut Resource| {
+            let val = loader(data);
+            resource.lock();
+            // SAFETY: We know that the type is correct and we have the lock.
+            unsafe {
+                *resource.downcast_mut::<Option<T>>() = Some(val);
+            }
+            resource.unlock();
+        });
         for extension in extensions {
             self.loaders
                 .insert((TypeId::of::<T>(), extension.into()), Rc::clone(&loader));

@@ -355,7 +355,7 @@ impl Graphics {
     /// font, or (0, 0) if the font is not loaded yet.
     pub fn measure_text(&self, text: &str, font: ResourceHandle<Font>, size: f32) -> (f32, f32) {
         if let Some(mut font) = self.resource_manager.get::<Font>(font) {
-            measure_text(text, &mut *font, size)
+            measure_text(text, &mut font, size)
         } else {
             (0., 0.)
         }
@@ -366,7 +366,7 @@ impl Graphics {
     pub fn measure_font(&self, font: ResourceHandle<Font>, size: f32) -> Option<FontMetrics> {
         self.resource_manager
             .get::<Font>(font)
-            .map(|font| measure_font(&*font, size))
+            .map(|font| measure_font(&font, size))
     }
 
     /// Returns the kerning between the given glyphs in the given font or `None`
