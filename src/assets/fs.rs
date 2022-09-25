@@ -3,24 +3,29 @@
 use std::fs::File as StdFile;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::thread::JoinHandle;
 
 use crate::experimental::{FileSystem, FileTask};
 
 struct BasicFileTask {
-    std: StdFile,
+    thread: Option<JoinHandle<Vec<u8>>>,
     buffer: Vec<u8>,
-    len: usize,
     path: PathBuf,
 }
 
 impl BasicFileTask {
     fn new(path: PathBuf) -> Self {
-        let std = StdFile::open(&path).unwrap();
-        let buffer = vec![0; 1024];
+        let path2 = path.clone();
+        let thread = Some(std::thread::spawn(move || {
+            let mut std = StdFile::open(path2).unwrap();
+            let mut buffer = Vec::new();
+            std.read_to_end(&mut buffer).unwrap();
+            buffer
+        }));
+        let buffer = Vec::new();
         BasicFileTask {
-            std,
+            thread,
             buffer,
-            len: 0,
             path,
         }
     }
@@ -28,31 +33,18 @@ impl BasicFileTask {
 
 impl FileTask for BasicFileTask {
     fn poll(&mut self) -> bool {
-        if self.len == self.buffer.len() {
-            let mut probe = [0_u8; 1024];
-            let len = self.std.read(&mut probe).unwrap();
-            if len == 0 {
-                return true;
-            } else {
-                self.buffer.resize(self.len * 2, 0);
-                self.buffer[self.len..self.len + len].copy_from_slice(&probe[..len]);
-                self.len += len;
-            }
+        if self.thread.is_none() {
+            true
+        } else if self.thread.as_ref().unwrap().is_finished() {
+            self.buffer = self.thread.take().unwrap().join().unwrap();
+            true
         } else {
-            match self.std.read(&mut self.buffer[self.len..]) {
-                Ok(0) => return true,
-                Ok(n) => self.len += n,
-                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-                Err(_) => {
-                    panic!();
-                }
-            };
+            false
         }
-        false
     }
 
     fn data(&self) -> &[u8] {
-        &self.buffer[..self.len]
+        &self.buffer
     }
 
     fn path(&self) -> &Path {
@@ -60,36 +52,36 @@ impl FileTask for BasicFileTask {
     }
 }
 
-/// A file system that simply loads files from the given path.
+/// A file system that loads files synchronously in a different thread.
 ///
-/// By default, assets files are loaded from the parent directory of the
-/// executable ([`BasicFileSystem`]) unless the executable is located in a
+/// By default, [`ThreadedFileSystem`] loads asset files relative to the parent
+/// directory of the executable unless the executable is located in a
 /// subdirectory of `CARGO_MANIFEST_DIR`, in which case asset files are loaded
 /// from `CARGO_MANIFEST_DIR`. All symbolic links are resolved.
-pub struct BasicFileSystem {
+pub struct ThreadedFileSystem {
     root: PathBuf,
 }
 
-impl Default for BasicFileSystem {
+impl Default for ThreadedFileSystem {
     fn default() -> Self {
         Self::new_with_root_relative("")
     }
 }
 
-impl BasicFileSystem {
-    /// Creates a new [`BasicFileSystem`]
+impl ThreadedFileSystem {
+    /// Creates a new [`ThreadedFileSystem`]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Creates a new [`BasicFileSystem`] with the given root path.
+    /// Creates a new [`ThreadedFileSystem`] with the given root path.
     pub fn new_with_root(root: impl AsRef<Path>) -> Self {
         Self {
             root: root.as_ref().to_path_buf(),
         }
     }
 
-    /// Creates a new [`BasicFileSystem`] with the given root path.
+    /// Creates a new [`ThreadedFileSystem`] with the given root path.
     ///
     /// The root path is interpreted relatively to the default root
     /// path.
@@ -110,7 +102,7 @@ impl BasicFileSystem {
     }
 }
 
-impl FileSystem for BasicFileSystem {
+impl FileSystem for ThreadedFileSystem {
     fn read(&mut self, path: &Path) -> Box<dyn FileTask> {
         let mut path_buf = self.root.clone();
         path_buf.push(path);

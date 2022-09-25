@@ -35,7 +35,7 @@ use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::rc::Rc;
 
-use self::fs::BasicFileSystem;
+use self::fs::ThreadedFileSystem;
 use crate::experimental::{FileSystem, FileTask};
 
 pub mod fs;
@@ -397,7 +397,7 @@ impl Assets {
                     let path = Path::new(path);
                     let handle = self.resource_manager.allocate::<T>();
                     if !self.fs_init {
-                        self.fs = Box::new(BasicFileSystem::new());
+                        self.fs = Box::new(ThreadedFileSystem::new());
                         self.fs_init = true;
                     }
                     let mut task = FileTaskResolve {
