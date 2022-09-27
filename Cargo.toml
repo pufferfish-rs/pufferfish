@@ -8,6 +8,10 @@ description = "An opinionated 2D game framework"
 repository = "https://github.com/pufferfish-rs/pufferfish/"
 license = "Zlib OR MIT OR Apache-2.0"
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
 etagere = { version = "0.2.7", optional = true }
 fontdue = { version = "0.7.2", optional = true }
