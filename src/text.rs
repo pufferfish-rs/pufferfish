@@ -1,5 +1,6 @@
 //! Types related to fonts and text rendering.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use etagere::euclid::Size2D;
@@ -14,7 +15,7 @@ const ATLAS_SIZE: u32 = 2048;
 
 /// A TrueType/OpenType font, owning an immutable copy of the font data.
 pub struct Font {
-    layout: Layout,
+    layout: RefCell<Layout>,
     inner: FontInner,
 }
 
@@ -30,7 +31,9 @@ impl Font {
     /// Creates a new font from the given data.
     pub fn new(data: impl AsRef<[u8]>) -> Self {
         Self {
-            layout: Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown),
+            layout: RefCell::new(Layout::new(
+                fontdue::layout::CoordinateSystem::PositiveYDown,
+            )),
             inner: FontInner {
                 font: fontdue::Font::from_bytes(data.as_ref(), Default::default()).unwrap(),
                 sprites: Vec::new(),
@@ -39,6 +42,64 @@ impl Font {
                 draw_commands: Vec::new(),
             },
         }
+    }
+
+    /// Returns the metrics of the given glyph in the given font or `None`
+    /// if the given glyph does not exist.
+    pub fn measure_glyph(&self, c: char, size: f32) -> Option<GlyphMetrics> {
+        let font = &self.inner.font;
+        let metrics = font.metrics_indexed(font.chars().get(&c)?.get(), size);
+
+        Some(GlyphMetrics {
+            x: metrics.xmin,
+            y: metrics.ymin,
+            width: metrics.width as u32,
+            height: metrics.height as u32,
+            advance: metrics.advance_width,
+        })
+    }
+
+    /// Measures and returns the width and height of the given text in the given
+    /// font.
+    pub fn measure_text(&self, text: &str, size: f32) -> (f32, f32) {
+        let Font { layout, inner } = self;
+        let mut layout = layout.borrow_mut();
+
+        layout.reset(&LayoutSettings::default());
+        layout.append(
+            std::slice::from_ref(&inner.font),
+            &TextStyle::new(text, size, 0),
+        );
+
+        let (x_min, x_max) = layout
+            .glyphs()
+            .iter()
+            .fold((0_f32, 0_f32), |(min, max), glyph| {
+                (min.min(glyph.x), max.max(glyph.x + glyph.width as f32))
+            });
+
+        (x_max - x_min, layout.height())
+    }
+
+    /// Returns the metrics of the given font.
+    pub fn measure_font(&self, size: f32) -> FontMetrics {
+        let metrics = self
+            .inner
+            .font
+            .horizontal_line_metrics(size)
+            .expect("vertical fonts are not yet supported");
+        FontMetrics {
+            ascent: metrics.ascent,
+            descent: metrics.descent,
+            line_gap: metrics.line_gap,
+            line_height: metrics.new_line_size,
+        }
+    }
+
+    /// Returns the kerning between the given glyphs in the given font or `None`
+    /// if a kerning value does not exist between the given pair of glyphs.
+    pub fn measure_kern(&self, left: char, right: char, size: f32) -> Option<f32> {
+        self.inner.font.horizontal_kern(left, right, size)
     }
 }
 
@@ -99,6 +160,7 @@ pub(crate) fn draw_text(
 ) {
     if let Some(mut font) = g.resource_manager.get(font) {
         let Font { layout, inner } = &mut *font;
+        let mut layout = layout.borrow_mut();
 
         layout.reset(&LayoutSettings {
             x,
@@ -289,53 +351,4 @@ fn draw_char(
             sprite: i,
         });
     }
-}
-
-pub(crate) fn measure_text(text: &str, font: &mut Font, size: f32) -> (f32, f32) {
-    let Font { layout, inner } = font;
-    layout.reset(&LayoutSettings::default());
-    layout.append(
-        std::slice::from_ref(&inner.font),
-        &TextStyle::new(text, size, 0),
-    );
-
-    let (x_min, x_max) = layout
-        .glyphs()
-        .iter()
-        .fold((0_f32, 0_f32), |(min, max), glyph| {
-            (min.min(glyph.x), max.max(glyph.x + glyph.width as f32))
-        });
-
-    (x_max - x_min, layout.height())
-}
-
-pub(crate) fn measure_glyph(c: char, font: &Font, size: f32) -> Option<GlyphMetrics> {
-    let font = &font.inner.font;
-    let metrics = font.metrics_indexed(font.chars().get(&c)?.get(), size);
-
-    Some(GlyphMetrics {
-        x: metrics.xmin,
-        y: metrics.ymin,
-        width: metrics.width as u32,
-        height: metrics.height as u32,
-        advance: metrics.advance_width,
-    })
-}
-
-pub(crate) fn measure_font(font: &Font, size: f32) -> FontMetrics {
-    let metrics = font
-        .inner
-        .font
-        .horizontal_line_metrics(size)
-        .expect("vertical fonts are not yet supported");
-    FontMetrics {
-        ascent: metrics.ascent,
-        descent: metrics.descent,
-        line_gap: metrics.line_gap,
-        line_height: metrics.new_line_size,
-    }
-}
-
-pub(crate) fn measure_kern(a: char, b: char, font: &Font, size: f32) -> Option<f32> {
-    font.inner.font.horizontal_kern(a, b, size)
 }

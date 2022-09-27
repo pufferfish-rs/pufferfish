@@ -307,9 +307,7 @@ impl Graphics {
 }
 
 #[cfg(feature = "text")]
-use crate::text::{
-    measure_font, measure_glyph, measure_kern, measure_text, Font, FontMetrics, GlyphMetrics,
-};
+use crate::text::Font;
 
 #[cfg(feature = "text")]
 impl Graphics {
@@ -338,52 +336,5 @@ impl Graphics {
     /// [`default_font`]: Graphics::default_font
     pub fn set_default_font(&mut self, font: ResourceHandle<Font>) {
         self.default_font = Some(font);
-    }
-
-    /// Returns the metrics of the given glyph in the given font or `None`
-    /// if the font is not loaded yet or the given glyph does not exist.
-    pub fn measure_glyph(
-        &self,
-        c: char,
-        font: ResourceHandle<Font>,
-        size: f32,
-    ) -> Option<GlyphMetrics> {
-        measure_glyph(c, &*self.resource_manager.get::<Font>(font)?, size)
-    }
-
-    /// Measures and returns the width and height of the given text in the given
-    /// font, or (0, 0) if the font is not loaded yet.
-    pub fn measure_text(&self, text: &str, font: ResourceHandle<Font>, size: f32) -> (f32, f32) {
-        if let Some(mut font) = self.resource_manager.get::<Font>(font) {
-            measure_text(text, &mut font, size)
-        } else {
-            (0., 0.)
-        }
-    }
-
-    /// Returns the metrics of the given font or `None` if the font is not
-    /// loaded yet.
-    pub fn measure_font(&self, font: ResourceHandle<Font>, size: f32) -> Option<FontMetrics> {
-        self.resource_manager
-            .get::<Font>(font)
-            .map(|font| measure_font(&font, size))
-    }
-
-    /// Returns the kerning between the given glyphs in the given font or `None`
-    /// if the font is not loaded yet or a kerning value does not exist between
-    /// the given pair of glyphs.
-    pub fn measure_kern(
-        &self,
-        left: char,
-        right: char,
-        font: ResourceHandle<Font>,
-        size: f32,
-    ) -> Option<f32> {
-        measure_kern(
-            left,
-            right,
-            &*self.resource_manager.get::<Font>(font)?,
-            size,
-        )
     }
 }
