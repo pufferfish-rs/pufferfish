@@ -116,7 +116,8 @@ struct DrawBatch {
 pub struct Graphics {
     /// An [`Rc`] of the underlying [`Context`].
     pub ctx: Rc<Context>,
-    pub(crate) resource_manager: ResourceManager,
+    /// The [`ResourceManager`] instance used by the [`Graphics`].
+    pub resource_manager: ResourceManager,
     pipeline: Pipeline,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
