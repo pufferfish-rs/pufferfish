@@ -422,7 +422,7 @@ impl Assets {
                     self.tasks.push(Some(task));
                 }
                 let handle = transmute_handle(handle);
-                self.handles.insert((type_id, path.into()), handle);
+                self.handles.insert((type_id, path), handle);
                 handle
             },
         )
