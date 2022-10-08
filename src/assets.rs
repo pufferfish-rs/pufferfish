@@ -312,12 +312,12 @@ pub struct Assets {
     resource_manager: ResourceManager,
     fs: Box<dyn FileSystem>,
     fs_init: bool,
-    loaders: HashMap<(TypeId, Cow<'static, str>), Loader>,
+    loaders: HashMap<(TypeId, Cow<'static, str>), Option<Loader>>,
     handles: HashMap<(TypeId, Cow<'static, str>), ResourceHandle<()>>,
-    tasks: Vec<FileTaskResolve>,
+    tasks: Vec<Option<FileTaskResolve>>,
 }
 
-type Loader = Rc<dyn Fn(&[u8], &mut Resource)>;
+type Loader = Rc<dyn Fn(&[u8], &mut Assets, &mut Resource)>;
 
 impl Assets {
     pub(crate) fn new(resource_manager: &ResourceManager) -> Self {
@@ -348,20 +348,24 @@ impl Assets {
     pub fn add_loader<T: 'static, const LEN: usize>(
         &mut self,
         extensions: [impl Into<Cow<'static, str>>; LEN],
-        loader: impl Fn(&[u8]) -> T + 'static,
+        loader: impl Fn(&[u8], &mut Assets) -> T + 'static,
     ) {
-        let loader: Loader = Rc::new(move |data: &[u8], resource: &mut Resource| {
-            let val = loader(data);
-            resource.lock();
-            // SAFETY: We know that the type is correct and we have the lock.
-            unsafe {
-                *resource.downcast_mut::<Option<T>>() = Some(val);
-            }
-            resource.unlock();
-        });
+        let loader: Loader = Rc::new(
+            move |data: &[u8], assets: &mut Assets, resource: &mut Resource| {
+                let val = loader(data, assets);
+                resource.lock();
+                // SAFETY: We know that the type is correct and we have the lock.
+                unsafe {
+                    *resource.downcast_mut::<Option<T>>() = Some(val);
+                }
+                resource.unlock();
+            },
+        );
         for extension in extensions {
-            self.loaders
-                .insert((TypeId::of::<T>(), extension.into()), Rc::clone(&loader));
+            self.loaders.insert(
+                (TypeId::of::<T>(), extension.into()),
+                Some(Rc::clone(&loader)),
+            );
         }
     }
 
@@ -387,30 +391,31 @@ impl Assets {
     pub fn load<T: 'static>(&mut self, path: impl Into<Cow<'static, str>>) -> ResourceHandle<T> {
         let type_id = TypeId::of::<T>();
         let path: Cow<'static, str> = path.into();
+        let key = (type_id, path.clone());
 
-        transmute_handle(
-            *self
-                .handles
-                .entry((type_id, path.clone()))
-                .or_insert_with(|| {
-                    let path: &str = &path;
-                    let path = Path::new(path);
-                    let handle = self.resource_manager.allocate::<T>();
-                    if !self.fs_init {
-                        self.fs = Box::new(ThreadedFileSystem::new());
-                        self.fs_init = true;
-                    }
-                    let mut task = FileTaskResolve {
-                        task: self.fs.read(path),
-                        type_id,
-                        idx: handle.idx,
-                    };
-                    if !task.poll(&mut self.loaders, &self.resource_manager) {
-                        self.tasks.push(task);
-                    }
-                    transmute_handle(handle)
-                }),
-        )
+        transmute_handle(if self.handles.contains_key(&key) {
+            *self.handles.get(&key).unwrap()
+        } else {
+            let path: &str = &path;
+            let path = Path::new(path);
+            let handle = self.resource_manager.allocate::<T>();
+            if !self.fs_init {
+                self.fs = Box::new(ThreadedFileSystem::new());
+                self.fs_init = true;
+            }
+            let mut task = FileTaskResolve {
+                task: self.fs.read(path),
+                type_id,
+                idx: handle.idx,
+            };
+            let rm = self.resource_manager.clone();
+            if !task.poll(self, rm) {
+                self.tasks.push(Some(task));
+            }
+            let handle = transmute_handle(handle);
+            self.handles.insert(key, handle);
+            handle
+        })
     }
 
     /// Updates any pending file loads. This is called internally at the start
@@ -418,9 +423,12 @@ impl Assets {
     pub fn update(&mut self) {
         let mut i = 0;
         while i < self.tasks.len() {
-            if self.tasks[i].poll(&mut self.loaders, &self.resource_manager) {
+            let mut task = self.tasks[i].take().unwrap();
+            let rm = self.resource_manager.clone();
+            if task.poll(self, rm) {
                 self.tasks.remove(i);
             } else {
+                self.tasks[i] = Some(task);
                 i += 1;
             }
         }
@@ -434,27 +442,16 @@ struct FileTaskResolve {
 }
 
 impl FileTaskResolve {
-    fn poll(
-        &mut self,
-        loaders: &mut HashMap<(TypeId, Cow<'static, str>), Loader>,
-        rm: &ResourceManager,
-    ) -> bool {
+    fn poll(&mut self, assets: &mut Assets, rm: ResourceManager) -> bool {
         let complete = self.task.poll();
         if complete {
-            let loader = loaders
-                .get(&(
-                    self.type_id,
-                    self.task
-                        .path()
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap()
-                        .into(),
-                ))
-                .unwrap();
+            let key = (self.type_id, self.task.extension().to_owned().into());
+            let loader = assets.loaders.get_mut(&key).unwrap();
+            let loader = loader.take().unwrap();
             let mut storage = rm.storage.borrow_mut();
             let resource = storage.get_mut(&(self.type_id, self.idx.get())).unwrap();
-            loader(self.task.data(), resource);
+            loader(self.task.data(), assets, resource);
+            *assets.loaders.get_mut(&key).unwrap() = Some(loader);
         }
         complete
     }

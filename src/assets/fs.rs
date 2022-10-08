@@ -10,14 +10,17 @@ use crate::experimental::{FileSystem, FileTask};
 struct BasicFileTask {
     thread: Option<JoinHandle<Vec<u8>>>,
     buffer: Vec<u8>,
-    path: PathBuf,
+    ext: String,
 }
 
 impl BasicFileTask {
     fn new(path: PathBuf) -> Self {
-        let path2 = path.clone();
+        let ext = path
+            .extension()
+            .map(|e| e.to_str().unwrap().to_string())
+            .unwrap_or_default();
         let thread = Some(std::thread::spawn(move || {
-            let mut std = StdFile::open(path2).unwrap();
+            let mut std = StdFile::open(path).unwrap();
             let mut buffer = Vec::new();
             std.read_to_end(&mut buffer).unwrap();
             buffer
@@ -26,7 +29,7 @@ impl BasicFileTask {
         BasicFileTask {
             thread,
             buffer,
-            path,
+            ext,
         }
     }
 }
@@ -47,8 +50,8 @@ impl FileTask for BasicFileTask {
         &self.buffer
     }
 
-    fn path(&self) -> &Path {
-        &self.path
+    fn extension(&self) -> &str {
+        &self.ext
     }
 }
 

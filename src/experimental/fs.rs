@@ -18,6 +18,6 @@ pub trait FileTask {
     /// populated if the task is not yet complete.
     fn data(&self) -> &[u8];
 
-    /// Returns the original path of the file being loaded.
-    fn path(&self) -> &Path;
+    /// Returns the extension of the file being loaded.
+    fn extension(&self) -> &str;
 }
