@@ -166,8 +166,8 @@ impl Graphics {
                 },
             ],
         );
-        let vertex_buffer = ctx.create_buffer(BufferKind::Vertex, BufferUsage::Stream, 10000);
-        let index_buffer = ctx.create_buffer(BufferKind::Index, BufferUsage::Stream, 15000);
+        let vertex_buffer = ctx.create_buffer(BufferKind::Vertex, BufferUsage::Stream, 8000 * 32);
+        let index_buffer = ctx.create_buffer(BufferKind::Index, BufferUsage::Stream, 12000 * 2);
         let blank_image = ctx.create_image_with_data(
             1,
             1,
