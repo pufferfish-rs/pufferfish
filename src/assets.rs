@@ -26,14 +26,16 @@
 use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::cell::{RefCell, UnsafeCell};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::hash::Hash;
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::marker::PhantomData;
 use std::num::NonZeroU64;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::rc::Rc;
+
+use hashbrown::HashMap;
 
 use self::fs::ThreadedFileSystem;
 use crate::experimental::{FileSystem, FileTask};
@@ -391,31 +393,39 @@ impl Assets {
     pub fn load<T: 'static>(&mut self, path: impl Into<Cow<'static, str>>) -> ResourceHandle<T> {
         let type_id = TypeId::of::<T>();
         let path: Cow<'static, str> = path.into();
-        let key = (type_id, path.clone());
 
-        transmute_handle(if self.handles.contains_key(&key) {
-            *self.handles.get(&key).unwrap()
-        } else {
-            let path: &str = &path;
-            let path = Path::new(path);
-            let handle = self.resource_manager.allocate::<T>();
-            if !self.fs_init {
-                self.fs = Box::new(ThreadedFileSystem::new());
-                self.fs_init = true;
-            }
-            let mut task = FileTaskResolve {
-                task: self.fs.read(path),
-                type_id,
-                idx: handle.idx,
-            };
-            let rm = self.resource_manager.clone();
-            if !task.poll(self, rm) {
-                self.tasks.push(Some(task));
-            }
-            let handle = transmute_handle(handle);
-            self.handles.insert(key, handle);
-            handle
-        })
+        let mut hasher = self.handles.hasher().build_hasher();
+        (type_id, &path).hash(&mut hasher);
+        let hash = hasher.finish();
+
+        transmute_handle(
+            if let Some((_, &handle)) = self
+                .handles
+                .raw_entry()
+                .from_hash(hash, |(a, b)| a == &type_id && b == &path)
+            {
+                handle
+            } else {
+                let p = Path::new(&*path);
+                let handle = self.resource_manager.allocate::<T>();
+                if !self.fs_init {
+                    self.fs = Box::new(ThreadedFileSystem::new());
+                    self.fs_init = true;
+                }
+                let mut task = FileTaskResolve {
+                    task: self.fs.read(p),
+                    type_id,
+                    idx: handle.idx,
+                };
+                let rm = self.resource_manager.clone();
+                if !task.poll(self, rm) {
+                    self.tasks.push(Some(task));
+                }
+                let handle = transmute_handle(handle);
+                self.handles.insert((type_id, path.into()), handle);
+                handle
+            },
+        )
     }
 
     /// Updates any pending file loads. This is called internally at the start

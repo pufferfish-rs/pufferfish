@@ -1,12 +1,12 @@
 //! Types related to fonts and text rendering.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 
 use etagere::euclid::Size2D;
 use etagere::{AllocId, AtlasAllocator};
 use fontdue::layout::{GlyphPosition, GlyphRasterConfig, Layout, LayoutSettings, TextStyle};
 use fontdue::Metrics;
+use hashbrown::HashMap;
 
 use crate::assets::ResourceHandle;
 use crate::graphics::{Color, Graphics, Sprite};

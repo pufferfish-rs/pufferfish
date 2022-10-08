@@ -1,10 +1,10 @@
 use std::any::{Any, TypeId};
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
 use fugu::Context;
+use hashbrown::HashMap;
 
 use crate::assets::{Assets, ResourceManager};
 use crate::graphics::{Graphics, Sprite};
