@@ -102,8 +102,8 @@ impl<T: 'static> Hash for ResourceHandle<T> {
 
 impl<T: 'static> Debug for ResourceHandle<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(crate::util::type_name::<ResourceHandle<T>>())
-            .field("idx", &self.idx)
+        f.debug_tuple(crate::util::type_name::<ResourceHandle<T>>())
+            .field(&self.idx)
             .finish()
     }
 }
@@ -319,7 +319,7 @@ pub struct Assets {
     tasks: Vec<Option<FileTaskResolve>>,
 }
 
-type Loader = Rc<dyn Fn(&[u8], &mut Assets, &mut Resource)>;
+type Loader = Rc<dyn Fn(&[u8], &mut Assets, TypeId, NonZeroU64)>;
 
 impl Assets {
     pub(crate) fn new(resource_manager: &ResourceManager) -> Self {
@@ -353,8 +353,10 @@ impl Assets {
         loader: impl Fn(&[u8], &mut Assets) -> T + 'static,
     ) {
         let loader: Loader = Rc::new(
-            move |data: &[u8], assets: &mut Assets, resource: &mut Resource| {
+            move |data, assets, type_id, idx| {
                 let val = loader(data, assets);
+                let mut storage = assets.resource_manager.storage.borrow_mut();
+                let resource = storage.get_mut(&(type_id, idx.get())).unwrap();
                 resource.lock();
                 // SAFETY: We know that the type is correct and we have the lock.
                 unsafe {
@@ -417,8 +419,7 @@ impl Assets {
                     type_id,
                     idx: handle.idx,
                 };
-                let rm = self.resource_manager.clone();
-                if !task.poll(self, rm) {
+                if !task.poll(self) {
                     self.tasks.push(Some(task));
                 }
                 let handle = transmute_handle(handle);
@@ -434,8 +435,7 @@ impl Assets {
         let mut i = 0;
         while i < self.tasks.len() {
             let mut task = self.tasks[i].take().unwrap();
-            let rm = self.resource_manager.clone();
-            if task.poll(self, rm) {
+            if task.poll(self) {
                 self.tasks.remove(i);
             } else {
                 self.tasks[i] = Some(task);
@@ -452,15 +452,13 @@ struct FileTaskResolve {
 }
 
 impl FileTaskResolve {
-    fn poll(&mut self, assets: &mut Assets, rm: ResourceManager) -> bool {
+    fn poll(&mut self, assets: &mut Assets) -> bool {
         let complete = self.task.poll();
         if complete {
             let key = (self.type_id, self.task.extension().to_owned().into());
             let loader = assets.loaders.get_mut(&key).unwrap();
             let loader = loader.take().unwrap();
-            let mut storage = rm.storage.borrow_mut();
-            let resource = storage.get_mut(&(self.type_id, self.idx.get())).unwrap();
-            loader(self.task.data(), assets, resource);
+            loader(self.task.data(), assets, self.type_id, self.idx);
             *assets.loaders.get_mut(&key).unwrap() = Some(loader);
         }
         complete
