@@ -25,7 +25,7 @@ pub fn run(mut app: App) {
     let window = window_builder.build().unwrap();
 
     video_subsystem
-        .gl_set_swap_interval(if app.vsync { 1 } else { 0 })
+        .gl_set_swap_interval(app.vsync as i32)
         .ok();
     let gl_attr = video_subsystem.gl_attr();
     gl_attr.set_context_version(3, 3);
