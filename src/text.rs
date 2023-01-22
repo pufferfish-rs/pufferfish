@@ -207,7 +207,7 @@ fn push_atlas(
             fugu::ImageFormat::Rgba8,
             fugu::ImageFilter::Linear,
             fugu::ImageWrap::Clamp,
-            &vec![0; ATLAS_SIZE as usize * ATLAS_SIZE as usize * 4],
+            vec![0; ATLAS_SIZE as usize * ATLAS_SIZE as usize * 4],
         ),
     );
     sprites.push(sprite);

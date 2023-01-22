@@ -326,7 +326,7 @@ impl App {
                     fugu::ImageFormat::Rgba8,
                     fugu::ImageFilter::Nearest,
                     fugu::ImageWrap::Clamp,
-                    &data,
+                    data,
                 )
             });
         }

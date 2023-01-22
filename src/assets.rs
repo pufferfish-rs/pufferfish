@@ -352,19 +352,17 @@ impl Assets {
         extensions: [impl Into<Cow<'static, str>>; LEN],
         loader: impl Fn(&[u8], &mut Assets) -> T + 'static,
     ) {
-        let loader: Loader = Rc::new(
-            move |data, assets, type_id, idx| {
-                let val = loader(data, assets);
-                let mut storage = assets.resource_manager.storage.borrow_mut();
-                let resource = storage.get_mut(&(type_id, idx.get())).unwrap();
-                resource.lock();
-                // SAFETY: We know that the type is correct and we have the lock.
-                unsafe {
-                    *resource.downcast_mut::<Option<T>>() = Some(val);
-                }
-                resource.unlock();
-            },
-        );
+        let loader: Loader = Rc::new(move |data, assets, type_id, idx| {
+            let val = loader(data, assets);
+            let mut storage = assets.resource_manager.storage.borrow_mut();
+            let resource = storage.get_mut(&(type_id, idx.get())).unwrap();
+            resource.lock();
+            // SAFETY: We know that the type is correct and we have the lock.
+            unsafe {
+                *resource.downcast_mut::<Option<T>>() = Some(val);
+            }
+            resource.unlock();
+        });
         for extension in extensions {
             self.loaders.insert(
                 (TypeId::of::<T>(), extension.into()),
