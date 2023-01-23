@@ -158,7 +158,7 @@ pub(crate) fn draw_text(
     color: Color,
     depth: f32,
 ) {
-    if let Some(mut font) = g.resource_manager.get(font) {
+    if let Some(mut font) = g.resource_manager.get_mut(font) {
         let Font { layout, inner } = &mut *font;
         let mut layout = layout.borrow_mut();
 
@@ -275,7 +275,7 @@ pub(crate) fn draw_glyph(
     color: Color,
     depth: f32,
 ) {
-    if let Some(mut font) = g.resource_manager.get(font) {
+    if let Some(mut font) = g.resource_manager.get_mut(font) {
         let FontInner {
             font,
             sprites,

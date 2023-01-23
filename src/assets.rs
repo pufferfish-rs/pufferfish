@@ -4,14 +4,14 @@
 //! [`ResourceHandle`]s to be used to access different resources of various
 //! types.
 //!
-//! The underlying resources can be accessed through the [`get`] method on
-//! [`ResourceManager`]. The returned [`ResourceRef`] uniquely borrows the
-//! underlying resource. This means that calling [`get`] while already holding
-//! on to a [`ResourceRef`] to the same resource will result in a runtime panic.
+//! The underlying resources can be accessed through the [`get`] and [`get_mut`]
+//! methods on [`ResourceManager`]. Borrowing rules are dynamically enforced on
+//! the returned locks to ensure validity. Any violation of these rules will
+//! result in a panic.
 //!
-//! Therefore, the [`ResourceRef`] *should not* be held on to for
-//! longer than necessary. The [`ResourceHandle`] should be kept around instead,
-//! and the [`ResourceRef`] should be reacquired each time it is needed.
+//! Therefore, these locks generally *should not* be held on to for longer than
+//! necessary. The [`ResourceHandle`] should be kept around instead,
+//! and resources should be reborrowed each time they are needed.
 //!
 //! To make this easier, the internal storage of the [`ResourceManager`] is
 //! wrapped inside a [`Rc`]. This means cloning the [`ResourceManager`] is cheap
@@ -22,6 +22,7 @@
 //! The restrictions described above may be relaxed in the future.
 //!
 //! [`get`]: ResourceManager::get
+//! [`get_mut`]: ResourceManager::get_mut
 
 use std::any::{Any, TypeId};
 use std::borrow::Cow;
@@ -120,32 +121,50 @@ struct Resource(Rc<UnsafeCell<dyn Any>>);
 
 #[repr(C)]
 struct ResourceInner<T> {
-    lock: bool,
+    flag: isize,
     data: T,
 }
 
 impl Resource {
     fn new<T: 'static>(data: T) -> Self {
-        Resource(Rc::new(UnsafeCell::new(ResourceInner {
-            lock: false,
-            data,
-        })))
+        Resource(Rc::new(UnsafeCell::new(ResourceInner { flag: 0, data })))
     }
 
     fn lock(&self) {
         unsafe {
-            let inner = self.0.get() as *mut bool;
-            if *inner {
-                panic!("cannot acquire lock to resource that is already locked");
+            let flag = self.0.get() as *mut isize;
+            if *flag >= 0 {
+                *flag += 1;
+            } else {
+                panic!("cannot immutably borrow resource; already mutably borrowed");
             }
-            *inner = true;
+        }
+    }
+
+    fn lock_mut(&self) {
+        unsafe {
+            let flag = self.0.get() as *mut isize;
+            match *flag {
+                0 => *flag = -1,
+                x if x < 0 => panic!("cannot mutably borrow resource more than once"),
+                _ => panic!("cannot mutably borrow resource; already immutably borrowed"),
+            }
         }
     }
 
     fn unlock(&self) {
         unsafe {
-            let inner = self.0.get() as *mut bool;
-            *inner = false;
+            let flag = self.0.get() as *mut isize;
+            debug_assert!(*flag > 0); // flag should be positive for immutable borrows
+            *flag -= 1;
+        }
+    }
+
+    fn unlock_mut(&self) {
+        unsafe {
+            let flag = self.0.get() as *mut isize;
+            debug_assert_eq!(*flag, -1); // flag should be -1 for a mutable borrow
+            *flag = 0;
         }
     }
 
@@ -161,13 +180,12 @@ impl Resource {
     }
 }
 
-/// A reference to a resource of type `T`.
+/// An immutable reference to a resource of type `T`.
 ///
-/// Generally speaking, *do not* hold on to a `ResourceRef` for longer than
-/// necessary, as attempting to acquire a new `ResourceRef` while already
-/// holding one to the same resource will result in a panic. Instead, you should
-/// hold on to the [`ResourceHandle`] and reacquire the `ResourceRef` each time
-/// you need it.
+/// Attempting to borrow a resource mutably while holding a [`ResourceRef`]
+/// to it will result in a panic. It is therefore generally recommended to store
+/// the [`ResourceHandle`] instead, reborrowing the resource each time you
+/// need it.
 ///
 /// See the [module-level documentation] for more information.
 ///
@@ -199,7 +217,50 @@ impl<T> Deref for ResourceRef<T> {
     }
 }
 
-impl<T> DerefMut for ResourceRef<T> {
+impl<T> Drop for ResourceRef<T> {
+    fn drop(&mut self) {
+        self.inner.unlock();
+    }
+}
+
+/// A mutable reference to a resource of type `T`.
+///
+/// Attempting to borrow a resource while already holding a [`ResourceRefMut`]
+/// to it will result in a panic. It is therefore generally recommended to store
+/// the [`ResourceHandle`] instead, reborrowing the resource each time you
+/// need it.
+///
+/// See the [module-level documentation] for more information.
+///
+/// [module-level documentation]: self
+pub struct ResourceRefMut<T> {
+    inner: Resource,
+    _marker: PhantomData<T>,
+}
+
+impl<T> ResourceRefMut<T> {
+    fn new(inner: Resource) -> Self {
+        Self {
+            inner,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T> Deref for ResourceRefMut<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe {
+            self.inner
+                .downcast_ref::<Option<T>>()
+                .as_ref()
+                .unwrap_unchecked()
+        }
+    }
+}
+
+impl<T> DerefMut for ResourceRefMut<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe {
             self.inner
@@ -210,9 +271,9 @@ impl<T> DerefMut for ResourceRef<T> {
     }
 }
 
-impl<T> Drop for ResourceRef<T> {
+impl<T> Drop for ResourceRefMut<T> {
     fn drop(&mut self) {
-        self.inner.unlock();
+        self.inner.unlock_mut();
     }
 }
 
@@ -249,7 +310,8 @@ impl ResourceManager {
         }
     }
 
-    /// Sets the underlying value of the given [`ResourceHandle`].
+    /// Sets the underlying resource corresponding to the given
+    /// [`ResourceHandle`].
     ///
     /// See the [module-level documentation] for more information.
     ///
@@ -268,16 +330,12 @@ impl ResourceManager {
         }
     }
 
-    /// Returns a reference to the underlying value of the given
+    /// Immutably borrows the underlying resource correspoding to the given
     /// [`ResourceHandle`].
-    ///
-    /// Generally speaking, you should call this function again every time you
-    /// need to access the data instead of keeping around the returned
-    /// guard.
     ///
     /// # Panics
     ///
-    /// Panics if there is already a [`ResourceRef`] to the same resource.
+    /// Panics if the given resource is currently mutably borrowed.
     ///
     /// See the [module-level documentation] for more information.
     ///
@@ -295,6 +353,33 @@ impl ResourceManager {
                 None
             } else {
                 Some(ResourceRef::new(inner.clone()))
+            }
+        }
+    }
+
+    /// Mutably borrows the underlying resource correspoding to the given
+    /// [`ResourceHandle`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the given resource is currently borrowed.
+    ///
+    /// See the [module-level documentation] for more information.
+    ///
+    /// [module-level documentation]: self
+    pub fn get_mut<T>(&self, handle: ResourceHandle<T>) -> Option<ResourceRefMut<T>> {
+        let type_id = TypeId::of::<T>();
+        unsafe {
+            let mut inner = self.storage.borrow_mut();
+            let inner = inner
+                .get_mut(&(type_id, handle.idx.get()))
+                .unwrap_unchecked();
+            inner.lock_mut();
+            if inner.downcast_ref::<Option<T>>().is_none() {
+                inner.unlock_mut();
+                None
+            } else {
+                Some(ResourceRefMut::new(inner.clone()))
             }
         }
     }
