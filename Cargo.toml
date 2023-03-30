@@ -17,13 +17,8 @@ etagere = { version = "0.2.7", optional = true }
 fontdue = { version = "0.7.2", optional = true }
 fugu = "0.1.0"
 hashbrown = "0.12.3"
-png-decoder = { version = "0.1.1", optional = true }
 sdl2 = { version = "0.35.2", features = ["bundled"] }
 
 [features]
-default = ["png-decoder", "text"]
+default = ["text"]
 text = ["dep:etagere", "dep:fontdue"]
-
-[[example]]
-name = "hello_world"
-required-features = ["png-decoder", "text"]

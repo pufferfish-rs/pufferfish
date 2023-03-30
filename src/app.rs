@@ -6,8 +6,8 @@ use std::rc::Rc;
 use fugu::Context;
 use hashbrown::HashMap;
 
-use crate::assets::{Assets, ResourceManager};
-use crate::graphics::{Graphics, Sprite};
+use crate::assets::ResourceManager;
+use crate::graphics::Graphics;
 use crate::input::Input;
 use crate::util::{replace_with, type_name};
 
@@ -311,34 +311,6 @@ impl App {
         self.state.insert(resource_manager.clone());
         self.state.insert(Graphics::new(ctx, resource_manager));
         self.state.insert(Input::new());
-
-        let mut assets = Assets::new(resource_manager);
-
-        #[cfg(feature = "png-decoder")]
-        {
-            let ctx = ctx.clone();
-            assets.add_loader(["png"], move |bytes, _| {
-                let (meta, data) = png_decoder::decode(bytes).unwrap();
-                Sprite::new(
-                    &ctx,
-                    meta.width,
-                    meta.height,
-                    fugu::ImageFormat::Rgba8,
-                    fugu::ImageFilter::Nearest,
-                    fugu::ImageWrap::Clamp,
-                    data,
-                )
-            });
-        }
-
-        #[cfg(feature = "text")]
-        {
-            use crate::text::Font;
-
-            assets.add_loader(["ttf", "otf"], |bytes, _| Font::new(bytes));
-        }
-
-        self.state.insert(assets);
 
         (self.init_callbacks)(&mut self.state);
     }

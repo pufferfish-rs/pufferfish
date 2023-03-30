@@ -25,23 +25,14 @@
 //! [`get_mut`]: ResourceManager::get_mut
 
 use std::any::{Any, TypeId};
-use std::borrow::Cow;
 use std::cell::{RefCell, UnsafeCell};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::Hash;
 use std::marker::PhantomData;
 use std::num::NonZeroU64;
 use std::ops::{Deref, DerefMut};
-use std::path::Path;
 use std::rc::Rc;
-
-use hashbrown::HashMap;
-
-use self::fs::ThreadedFileSystem;
-use crate::experimental::{FileSystem, FileTask};
-
-pub mod fs;
 
 /// Central storage of resources used in the game. Accessible from
 /// [`App`](crate::App) by default.
@@ -69,7 +60,8 @@ pub struct ResourceManager {
 /// [`get`] method on [`ResourceManager`].
 ///
 /// An `Option<ResourceHandle<T>>` is guaranteed to be the same size as a bare
-/// `ResourceHandle<T>`.
+/// `ResourceHandle<T>`. Otherwise, the representation of this type is
+/// unspecified and may change at any time.
 ///
 /// [`allocate`]: ResourceManager::allocate
 /// [`load`]: Assets::load
@@ -93,26 +85,20 @@ impl<T: 'static> PartialEq for ResourceHandle<T> {
     }
 }
 
-impl<T: 'static> Eq for ResourceHandle<T> {}
-
 impl<T: 'static> Hash for ResourceHandle<T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.idx.hash(state);
+        state.write_u64(self.idx.get());
     }
 }
 
 impl<T: 'static> Debug for ResourceHandle<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple(crate::util::type_name::<ResourceHandle<T>>())
-            .field(&self.idx)
-            .finish()
-    }
-}
-
-fn transmute_handle<T, U>(handle: ResourceHandle<T>) -> ResourceHandle<U> {
-    ResourceHandle {
-        idx: handle.idx,
-        _marker: PhantomData,
+        write!(
+            f,
+            "ResourceHandle<{}>({})",
+            std::any::type_name::<T>(),
+            self.idx.get()
+        )
     }
 }
 
@@ -382,168 +368,5 @@ impl ResourceManager {
                 Some(ResourceRefMut::new(inner.clone()))
             }
         }
-    }
-}
-
-/// Abstraction for loading assets. Accessible from [`App`](crate::App) by
-/// default.
-///
-/// By default, asset files are loaded from a [`BasicFileSystem`] initialized
-/// with default settings. To change this behavior, set the file system by
-/// calling [`set_fs`]. Also note that the default file system is not allocated
-/// and initialized until you attempt to read a file.
-///
-/// [`set_fs`]: Self::set_fs
-/// [`init_fs`]: Self::init_fs
-pub struct Assets {
-    resource_manager: ResourceManager,
-    fs: Box<dyn FileSystem>,
-    fs_init: bool,
-    loaders: HashMap<(TypeId, Cow<'static, str>), Option<Loader>>,
-    handles: HashMap<(TypeId, Cow<'static, str>), ResourceHandle<()>>,
-    tasks: Vec<Option<FileTaskResolve>>,
-}
-
-type Loader = Rc<dyn Fn(&[u8], &mut Assets, TypeId, NonZeroU64)>;
-
-impl Assets {
-    pub(crate) fn new(resource_manager: &ResourceManager) -> Self {
-        struct PlaceholderFileSystem;
-        impl FileSystem for PlaceholderFileSystem {
-            fn read(&mut self, _: &Path) -> Box<dyn FileTask> {
-                unreachable!()
-            }
-        }
-
-        Self {
-            resource_manager: resource_manager.clone(),
-            fs: Box::new(PlaceholderFileSystem),
-            fs_init: false,
-            loaders: HashMap::new(),
-            handles: HashMap::new(),
-            tasks: Vec::new(),
-        }
-    }
-
-    /// Registers a loader for the given type.
-    ///
-    /// # Arguments
-    ///
-    /// * `extensions` - An array of file extensions to apply the loader to.
-    /// * `loader` - A closure that takes a byte slice and returns a value of
-    ///   type `T`.
-    pub fn add_loader<T: 'static, const LEN: usize>(
-        &mut self,
-        extensions: [impl Into<Cow<'static, str>>; LEN],
-        loader: impl Fn(&[u8], &mut Assets) -> T + 'static,
-    ) {
-        let loader: Loader = Rc::new(move |data, assets, type_id, idx| {
-            let val = loader(data, assets);
-            let mut storage = assets.resource_manager.storage.borrow_mut();
-            let resource = storage.get_mut(&(type_id, idx.get())).unwrap();
-            resource.lock();
-            // SAFETY: We know that the type is correct and we have the lock.
-            unsafe {
-                *resource.downcast_mut::<Option<T>>() = Some(val);
-            }
-            resource.unlock();
-        });
-        for extension in extensions {
-            self.loaders.insert(
-                (TypeId::of::<T>(), extension.into()),
-                Some(Rc::clone(&loader)),
-            );
-        }
-    }
-
-    /// Sets the file system to use for loading assets.
-    pub fn set_fs(&mut self, fs: impl FileSystem + 'static) {
-        self.fs = Box::new(fs);
-        self.fs_init = true;
-    }
-
-    /// Returns a [`ResourceHandle`] of the given type representing the asset at
-    /// the given path. The loader is only called and a new [`ResourceHandle`]
-    /// allocated if the asset has not already been loaded. Otherwise, a copy of
-    /// the existing handle is returned.
-    ///
-    /// Assets are not guaranteed to have been loaded by the time this function
-    /// returns, so you should gracefully handle cases where the asset is not
-    /// loaded yet.
-    ///
-    /// # Panics
-    ///
-    /// Panics if no asset exists at the given path, the asset cannot be loaded
-    /// successfully, or no loader matches the given file extension and type.
-    pub fn load<T: 'static>(&mut self, path: impl Into<Cow<'static, str>>) -> ResourceHandle<T> {
-        let type_id = TypeId::of::<T>();
-        let path: Cow<'static, str> = path.into();
-
-        let mut hasher = self.handles.hasher().build_hasher();
-        (type_id, &path).hash(&mut hasher);
-        let hash = hasher.finish();
-
-        transmute_handle(
-            if let Some((_, &handle)) = self
-                .handles
-                .raw_entry()
-                .from_hash(hash, |(a, b)| a == &type_id && b == &path)
-            {
-                handle
-            } else {
-                let p = Path::new(&*path);
-                let handle = self.resource_manager.allocate::<T>();
-                if !self.fs_init {
-                    self.fs = Box::new(ThreadedFileSystem::new());
-                    self.fs_init = true;
-                }
-                let mut task = FileTaskResolve {
-                    task: self.fs.read(p),
-                    type_id,
-                    idx: handle.idx,
-                };
-                if !task.poll(self) {
-                    self.tasks.push(Some(task));
-                }
-                let handle = transmute_handle(handle);
-                self.handles.insert((type_id, path), handle);
-                handle
-            },
-        )
-    }
-
-    /// Updates any pending file loads. This is called internally at the start
-    /// of each frame.
-    pub fn update(&mut self) {
-        let mut i = 0;
-        while i < self.tasks.len() {
-            let mut task = self.tasks[i].take().unwrap();
-            if task.poll(self) {
-                self.tasks.remove(i);
-            } else {
-                self.tasks[i] = Some(task);
-                i += 1;
-            }
-        }
-    }
-}
-
-struct FileTaskResolve {
-    task: Box<dyn FileTask>,
-    type_id: TypeId,
-    idx: NonZeroU64,
-}
-
-impl FileTaskResolve {
-    fn poll(&mut self, assets: &mut Assets) -> bool {
-        let complete = self.task.poll();
-        if complete {
-            let key = (self.type_id, self.task.extension().to_owned().into());
-            let loader = assets.loaders.get_mut(&key).unwrap();
-            let loader = loader.take().unwrap();
-            loader(self.task.data(), assets, self.type_id, self.idx);
-            *assets.loaders.get_mut(&key).unwrap() = Some(loader);
-        }
-        complete
     }
 }
