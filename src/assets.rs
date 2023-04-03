@@ -102,6 +102,38 @@ impl<T: 'static> Debug for ResourceHandle<T> {
     }
 }
 
+impl<T: 'static> ResourceHandle<T> {
+    /// Returns the `ResourceId` corresponding to this handle.
+    pub fn to_id(self) -> ResourceId {
+        ResourceId { idx: self.idx }
+    }
+
+    /// Creates a `ResourceHandle` from a `ResourceId`.
+    ///
+    /// # Safety
+    ///
+    /// This may produce invalid `ResourceHandle`s if the `ResourceId` was
+    /// created from a `ResourceHandle` of a different type. It is undefined
+    /// behavior to use an invalid `ResourceHandle`.
+    pub unsafe fn from_id(id: ResourceId) -> Self {
+        ResourceHandle {
+            idx: id.idx,
+            _marker: PhantomData,
+        }
+    }
+}
+
+/// A raw identifier for a resource.
+///
+/// An `Option<ResourceId>` is guaranteed to be the same size as a bare
+/// `ResourceId`. Otherwise, the representation of this type is unspecified and
+/// may change at any time.
+///
+/// In most cases, you should use [`ResourceHandle`] instead.
+pub struct ResourceId {
+    idx: NonZeroU64,
+}
+
 #[derive(Clone)]
 struct Resource(Rc<UnsafeCell<dyn Any>>);
 
